@@ -42,6 +42,7 @@ const (
 	searching
 	renaming
 	confirming
+	confirmingLive
 	helping
 )
 
@@ -73,6 +74,7 @@ type Model struct {
 
 func New(s *store.Store) *Model {
 	model := &Model{store: s}
+	s.Sync()
 	model.reload()
 
 	return model
@@ -115,6 +117,8 @@ func (m *Model) handleKey(key tea.KeyMsg) tea.Cmd {
 		m.editInput(key, m.finishRename, nil)
 	case confirming:
 		m.finishUnstar(russianLayout.Replace(key.String()) == "y")
+	case confirmingLive:
+		return m.finishOpen(russianLayout.Replace(key.String()) == "y")
 	case helping:
 		m.mode = browsing
 	default:
@@ -235,17 +239,17 @@ func (m *Model) finishUnstar(confirmed bool) {
 	if m.currentProject() == nil {
 		m.level = projectsLevel
 	}
-
-	m.clampCursor()
 }
 
 func (m *Model) open() tea.Cmd {
 	if m.level == projectsLevel {
-		if len(m.rows()) == 0 {
+		selected := m.selectedProject()
+
+		if selected == nil {
 			return nil
 		}
 
-		m.root = m.visibleProjects()[m.cursor[projectsLevel]].root
+		m.root = selected.root
 		m.level, m.cursor[sessionsLevel], m.query[sessionsLevel] = sessionsLevel, 0, ""
 
 		return nil
@@ -259,6 +263,24 @@ func (m *Model) open() tea.Cmd {
 
 	if session.Lost {
 		m.message = i18n.T("lost_session")
+		return nil
+	}
+
+	if claude.LiveSessionIDs()[session.ID] {
+		m.mode = confirmingLive
+		return nil
+	}
+
+	m.Selected = session
+
+	return tea.Quit
+}
+
+func (m *Model) finishOpen(confirmed bool) tea.Cmd {
+	m.mode = browsing
+	session := m.selectedSession()
+
+	if !confirmed || session == nil {
 		return nil
 	}
 
@@ -280,16 +302,47 @@ func (m *Model) move(delta int) {
 }
 
 func (m *Model) clampCursor() {
-	count := len(m.rows())
-	m.cursor[m.level] = max(0, min(m.cursor[m.level], count-1))
+	m.cursor[projectsLevel] = max(0, min(m.cursor[projectsLevel], len(m.visibleProjects())-1))
+	m.cursor[sessionsLevel] = max(0, min(m.cursor[sessionsLevel], len(m.visibleSessions())-1))
+}
+
+func (m *Model) selection() (root, id string) {
+	if m.level == sessionsLevel {
+		root = m.root
+	} else if selected := m.selectedProject(); selected != nil {
+		root = selected.root
+	}
+
+	if session := m.selectedSession(); session != nil {
+		id = session.ID
+	}
+
+	return root, id
+}
+
+func (m *Model) restoreSelection(root, id string) {
+	for i, p := range m.visibleProjects() {
+		if p.root == root {
+			m.cursor[projectsLevel] = i
+		}
+	}
+
+	for i, session := range m.visibleSessions() {
+		if session.ID == id {
+			m.cursor[sessionsLevel] = i
+		}
+	}
+
+	m.clampCursor()
 }
 
 func (m *Model) reload() {
+	root, id := m.selection()
+
 	if err := m.store.Reload(); err != nil {
 		m.message = err.Error()
 	}
 
-	m.store.Sync()
 	live := claude.LiveSessionIDs()
 	indexByRoot := map[string]int{}
 	m.projects = nil
@@ -314,6 +367,8 @@ func (m *Model) reload() {
 	sort.SliceStable(m.projects, func(a, b int) bool {
 		return m.projects[a].sessions[0].ModTime.After(m.projects[b].sessions[0].ModTime)
 	})
+
+	m.restoreSelection(root, id)
 }
 
 func modTime(record store.Record, s *store.Store) time.Time {
@@ -364,6 +419,16 @@ func (m *Model) visibleSessions() []Session {
 	}
 
 	return visible
+}
+
+func (m *Model) selectedProject() *project {
+	projects := m.visibleProjects()
+
+	if len(projects) == 0 {
+		return nil
+	}
+
+	return &projects[max(0, min(m.cursor[projectsLevel], len(projects)-1))]
 }
 
 func (m *Model) selectedSession() *Session {
@@ -453,9 +518,13 @@ func (m *Model) View() string {
 		title += "  /" + query
 	}
 
-	lines := []string{" " + boldStyle.Render(fitStart(title, m.lineWidth()-2)), ""}
+	lines := []string{
+		" " + boldStyle.Render("★ "+fitStart(title, m.lineWidth()-4)),
+		m.rule(),
+		"",
+	}
 	rows := m.rows()
-	visible := max(1, m.height-5)
+	visible := max(1, m.height-6)
 	top := max(0, m.cursor[m.level]-visible+1)
 
 	if len(m.store.Records) == 0 {
@@ -473,6 +542,16 @@ func (m *Model) View() string {
 	}
 
 	return strings.Join(lines, "\n") + "\n" + m.footer()
+}
+
+func (m *Model) rule() string {
+	width := m.width - 2
+
+	if m.width <= 0 {
+		width = 40
+	}
+
+	return " " + dimStyle.Render(strings.Repeat("─", max(width, 1)))
 }
 
 func (m *Model) renderRow(r row, selected bool) string {
@@ -519,14 +598,10 @@ func (m *Model) footerText() (string, lipgloss.Style) {
 		return "/" + m.input + "█", plain
 	case renaming:
 		return i18n.T("prompt_rename") + m.input + "█", plain
-	case confirming:
-		session := m.selectedSession()
-
-		if m.store.OnlyCopy(session.ID) {
-			return i18n.T("confirm_last", session.Name), plain
+	case confirming, confirmingLive:
+		if session := m.selectedSession(); session != nil {
+			return m.confirmation(*session), plain
 		}
-
-		return i18n.T("confirm_unstar", session.Name), plain
 	}
 
 	if m.message != "" {
@@ -538,6 +613,17 @@ func (m *Model) footerText() (string, lipgloss.Style) {
 	}
 
 	return i18n.T("hint_sessions"), dimStyle
+}
+
+func (m *Model) confirmation(session Session) string {
+	switch {
+	case m.mode == confirmingLive:
+		return i18n.T("confirm_live", session.Name)
+	case m.store.OnlyCopy(session.ID):
+		return i18n.T("confirm_last", session.Name)
+	}
+
+	return i18n.T("confirm_unstar", session.Name)
 }
 
 func (m *Model) lineWidth() int {

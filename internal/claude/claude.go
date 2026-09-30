@@ -123,17 +123,22 @@ func LiveSessionIDs() map[string]bool {
 }
 
 func ProjectRoot(cwd string) string {
-	output, err := exec.Command("git", "-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
+	output, err := exec.Command("git", "-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir", "--show-toplevel").Output()
 
 	if err != nil {
 		return cwd
 	}
 
-	commonDir := filepath.Clean(strings.TrimSpace(string(output)))
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	commonDir := filepath.Clean(lines[0])
 
-	if filepath.Base(commonDir) != ".git" {
-		return cwd
+	if filepath.Base(commonDir) == ".git" {
+		return filepath.Dir(commonDir)
 	}
 
-	return filepath.Dir(commonDir)
+	if len(lines) > 1 {
+		return filepath.Clean(lines[1])
+	}
+
+	return cwd
 }

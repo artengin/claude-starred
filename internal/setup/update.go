@@ -32,41 +32,45 @@ type release struct {
 	} `json:"assets"`
 }
 
-func Update(currentVersion, executable string) (string, error) {
+func Update(currentVersion, executable string) (string, bool, error) {
 	latest, err := latestRelease()
 
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 
 	if strings.TrimPrefix(latest.Tag, "v") == strings.TrimPrefix(currentVersion, "v") {
-		return latest.Tag, nil
+		return latest.Tag, false, nil
 	}
 
 	archiveName := fmt.Sprintf("claude-starred_%s_%s.%s", runtime.GOOS, runtime.GOARCH, archiveExtension())
 	archive, err := download(latest.assetURL(archiveName))
 
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 
 	checksums, err := download(latest.assetURL("checksums.txt"))
 
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 
 	if err := verifyChecksum(archive, checksums, archiveName); err != nil {
-		return "", err
+		return "", false, err
 	}
 
 	binary, err := extractBinary(archive)
 
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 
-	return latest.Tag, replaceExecutable(executable, binary)
+	if err := replaceExecutable(executable, binary); err != nil {
+		return "", false, err
+	}
+
+	return latest.Tag, true, nil
 }
 
 func latestRelease() (release, error) {
@@ -184,15 +188,23 @@ func replaceExecutable(executable string, binary []byte) error {
 		return err
 	}
 
-	if runtime.GOOS == "windows" {
-		os.Remove(executable + ".old")
-
-		if err := os.Rename(executable, executable+".old"); err != nil {
-			return err
-		}
+	if runtime.GOOS != "windows" {
+		return os.Rename(temporary, executable)
 	}
 
-	return os.Rename(temporary, executable)
+	backup := executable + ".old"
+	os.Remove(backup)
+
+	if err := os.Rename(executable, backup); err != nil {
+		return err
+	}
+
+	if err := os.Rename(temporary, executable); err != nil {
+		os.Rename(backup, executable)
+		return err
+	}
+
+	return nil
 }
 
 func archiveExtension() string {

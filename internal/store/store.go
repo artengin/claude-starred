@@ -155,6 +155,24 @@ func (s *Store) OnlyCopy(id string) bool {
 	return record != nil && !exists(record.Transcript) && exists(s.CopyPath(id))
 }
 
+func (s *Store) Snapshot(id string) bool {
+	record := s.Find(id)
+
+	if record == nil {
+		return false
+	}
+
+	transcript, err := os.Stat(record.Transcript)
+
+	if err != nil {
+		return false
+	}
+
+	copied, err := os.Stat(s.CopyPath(id))
+
+	return err == nil && !os.SameFile(transcript, copied)
+}
+
 func (s *Store) CopyPath(id string) string {
 	return filepath.Join(s.Dir, "transcripts", id+".jsonl")
 }
@@ -214,13 +232,31 @@ func (s *Store) write(records []Record) error {
 		return err
 	}
 
-	temporary := s.file() + ".tmp"
+	temporary, err := os.CreateTemp(s.Dir, "starred.json.*.tmp")
 
-	if err := os.WriteFile(temporary, append(data, '\n'), 0o600); err != nil {
+	if err != nil {
 		return err
 	}
 
-	return os.Rename(temporary, s.file())
+	if err := writeAndRename(temporary, append(data, '\n'), s.file()); err != nil {
+		os.Remove(temporary.Name())
+		return err
+	}
+
+	return nil
+}
+
+func writeAndRename(temporary *os.File, data []byte, target string) error {
+	if _, err := temporary.Write(data); err != nil {
+		temporary.Close()
+		return err
+	}
+
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+
+	return os.Rename(temporary.Name(), target)
 }
 
 func keepCopy(source, target string) error {

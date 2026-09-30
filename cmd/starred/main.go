@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -160,6 +161,10 @@ func star(s *store.Store, args []string) error {
 
 	fmt.Println(i18n.T("star_done", record.Name))
 
+	if s.Snapshot(record.ID) {
+		fmt.Println(i18n.T("star_snapshot"))
+	}
+
 	return nil
 }
 
@@ -276,10 +281,16 @@ func update() error {
 		return err
 	}
 
-	tag, err := setup.Update(version, executable)
+	tag, updated, err := setup.Update(version, executable)
 
 	if err != nil {
 		return err
+	}
+
+	if updated && setup.SkillInstalled() {
+		if output, err := exec.Command(executable, "install").CombinedOutput(); err != nil {
+			return fmt.Errorf("binary updated to %s, but the /star skill was not refreshed (%w: %s); run `starred install`", tag, err, output)
+		}
 	}
 
 	fmt.Println("starred", tag)

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,6 +30,7 @@ func newModel(t *testing.T) (*Model, *store.Store) {
 		{"a", "Checkout flow", "/work/shop", "/work/shop", time.Hour},
 		{"b", "Price migration", "/work/shop-2", "/work/shop", 2 * time.Hour},
 		{"c", "Meeting notes", "/work/notes", "/work/notes", 30 * time.Minute},
+		{"d", "Old notes", "/work/notes", "/work/notes", 3 * time.Hour},
 	}
 
 	for _, session := range sessions {
@@ -130,7 +132,7 @@ func TestRenameAndUnstar(t *testing.T) {
 
 	press(m, "d", "y", "d", "y")
 
-	if len(s.Records) != 1 || m.level != projectsLevel {
+	if len(s.Records) != 2 || m.level != projectsLevel {
 		t.Fatalf("expected the empty project to close: %+v", s.Records)
 	}
 }
@@ -141,6 +143,56 @@ func TestEnterOnSessionSelectsIt(t *testing.T) {
 
 	if m.Selected == nil || m.Selected.ID != "c" {
 		t.Fatalf("unexpected selection: %+v", m.Selected)
+	}
+}
+
+func TestEnterOnLiveSessionAsksForConfirmation(t *testing.T) {
+	m, _ := newModel(t)
+	sessions := filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), "sessions")
+	os.MkdirAll(sessions, 0o700)
+	os.WriteFile(filepath.Join(sessions, "1.json"), []byte(fmt.Sprintf(`{"pid":%d,"sessionId":"c"}`, os.Getpid())), 0o600)
+	m.reload()
+	press(m, "enter", "enter")
+
+	if m.Selected != nil || m.mode != confirmingLive {
+		t.Fatalf("a live session must ask before opening: selected %+v, mode %v", m.Selected, m.mode)
+	}
+
+	assertContains(t, m.View(), "open in another terminal")
+	press(m, "n")
+
+	if m.Selected != nil || m.mode != browsing {
+		t.Fatal("n must cancel opening")
+	}
+
+	press(m, "enter", "y")
+
+	if m.Selected == nil || m.Selected.ID != "c" {
+		t.Fatalf("y must open the session: %+v", m.Selected)
+	}
+}
+
+func TestRenameOutOfSearchKeepsCursorOnVisibleRow(t *testing.T) {
+	m, _ := newModel(t)
+	press(m, "j", "enter", "/", "c", "h", "e", "c", "k", "enter", "r", "ctrl+u", "P", "a", "y", "enter")
+
+	if rows := m.rows(); len(rows) != 0 || m.cursor[sessionsLevel] != 0 {
+		t.Fatalf("cursor must be clamped to the visible rows: %+v, cursor %d", rows, m.cursor[sessionsLevel])
+	}
+
+	press(m, "esc")
+
+	if session := m.selectedSession(); session == nil || session.Name != "Pay" {
+		t.Fatalf("expected the renamed session under the cursor: %+v", session)
+	}
+}
+
+func TestProjectCursorFollowsTheProjectAfterUnstar(t *testing.T) {
+	m, _ := newModel(t)
+	press(m, "enter", "d", "y", "h")
+
+	if projects := m.visibleProjects(); m.cursor[projectsLevel] != 1 || projects[1].root != "/work/notes" {
+		t.Fatalf("cursor must stay on the reordered project: %d %+v", m.cursor[projectsLevel], projects)
 	}
 }
 

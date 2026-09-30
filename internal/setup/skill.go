@@ -58,6 +58,12 @@ func InstallSkill(executable string) error {
 	return os.WriteFile(path, []byte(fmt.Sprintf(skillTemplate, shellQuote(executable))), 0o644)
 }
 
+func SkillInstalled() bool {
+	data, err := os.ReadFile(filepath.Join(SkillDir(), "SKILL.md"))
+
+	return err == nil && strings.Contains(string(data), skillMarker)
+}
+
 func RemoveSkill() error {
 	data, err := os.ReadFile(filepath.Join(SkillDir(), "SKILL.md"))
 

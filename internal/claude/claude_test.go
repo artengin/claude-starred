@@ -106,4 +106,14 @@ func TestProjectRootGroupsWorktreesAndSubdirectories(t *testing.T) {
 	if root := ProjectRoot(filepath.Join(dir, "missing")); root != filepath.Join(dir, "missing") {
 		t.Errorf("missing directory should be its own root, got %s", root)
 	}
+
+	bare := filepath.Join(dir, "app", ".bare")
+	checkout := filepath.Join(dir, "app", "main")
+	git("clone", "-q", "--bare", repository, bare)
+	git("-C", bare, "worktree", "add", "-q", checkout)
+	os.MkdirAll(filepath.Join(checkout, "src"), 0o700)
+
+	if root := ProjectRoot(filepath.Join(checkout, "src")); root != checkout {
+		t.Errorf("subdirectory of a bare-repo worktree should map to the worktree, got %s", root)
+	}
 }

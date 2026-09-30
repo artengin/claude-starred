@@ -5,7 +5,8 @@ Bookmarks for your Claude Code sessions.
 Star the sessions worth coming back to with `/star`, then find and reopen them from one small tree in your terminal. Starred sessions survive Claude Code's automatic cleanup.
 
 ```
- Starred
+ ★ Starred
+ ──────────────────────────────────────
 
  > my-app
    api-server
@@ -15,7 +16,8 @@ Star the sessions worth coming back to with `/star`, then find and reopen them f
 `Enter` opens a project:
 
 ```
- my-app
+ ★ my-app
+ ──────────────────────────────────────
 
  > ● Checkout flow redesign
      Payment retries
@@ -81,11 +83,12 @@ Star the sessions worth coming back to with `/star`, then find and reopen them f
 | `?` | help |
 | `q` | quit |
 
-`●` marks a session that is running right now.
+`●` marks a session that is running right now. Opening it asks for confirmation, because two Claude processes on one session write to the same transcript.
 
 ## Good to know
 
 - Claude Code deletes old sessions after `cleanupPeriodDays`. Starred sessions are kept: `starred` brings them back, so `claude --resume` keeps working. Subagent history and file checkpoints of old sessions are still removed by Claude.
+- The kept copy is a hard link of the transcript, so it always matches. When a hard link is impossible (the data directory is on another filesystem), `/star` warns that the copy is a snapshot; it is refreshed every time you open `starred`.
 - `starred` never changes Claude Code's settings or transcripts. Names are stored separately, so they don't show up in Claude's `/resume`.
 - The interface language follows `LANG`.
 - Claude Code's session format is undocumented, so a Claude Code update may break `starred`.
@@ -97,7 +100,7 @@ starred update
 starred uninstall
 ```
 
-`uninstall` removes the `/star` skill, the starred list with its kept copies, and the binary. If Claude has already deleted some starred sessions, you are warned that they will be lost.
+`update` replaces the binary and refreshes the `/star` skill. `uninstall` removes the `/star` skill, the starred list with its kept copies, and the binary. If Claude has already deleted some starred sessions, you are warned that they will be lost.
 
 ## Data
 

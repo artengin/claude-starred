@@ -16,6 +16,7 @@ var english = map[string]string{
 	"prompt_rename":   "Name: ",
 	"confirm_unstar":  "Unstar «%s»? (y/n)",
 	"confirm_last":    "Claude already deleted «%s», this is the last copy. Unstar and lose it? (y/n)",
+	"confirm_live":    "«%s» is open in another terminal. Open it here as well? (y/n)",
 	"renamed":         "Renamed: %s",
 	"unstarred":       "Unstarred: %s",
 	"lost_session":    "The transcript is gone, the session cannot be opened",
@@ -32,6 +33,7 @@ var english = map[string]string{
 	"help_close":      "Any key to go back",
 	"moved_from":      "%s is gone, opening from %s",
 	"star_done":       "Starred «%s».",
+	"star_snapshot":   "Hard link failed, so the kept copy is a snapshot; it is refreshed each time you open `starred`.",
 	"star_status_no":  "not starred",
 	"star_status_yes": "starred",
 }
@@ -46,6 +48,7 @@ var russian = map[string]string{
 	"prompt_rename":   "Имя: ",
 	"confirm_unstar":  "Убрать «%s» из избранного? (y/n)",
 	"confirm_last":    "Claude уже удалил «%s», это последняя копия. Убрать и потерять её? (y/n)",
+	"confirm_live":    "«%s» открыта в другом терминале. Открыть и здесь? (y/n)",
 	"renamed":         "Переименовано: %s",
 	"unstarred":       "Убрано из избранного: %s",
 	"lost_session":    "Транскрипта нет, сессию не открыть",
@@ -62,6 +65,7 @@ var russian = map[string]string{
 	"help_close":      "Любая клавиша, чтобы вернуться",
 	"moved_from":      "Каталога %s больше нет, открываю из %s",
 	"star_done":       "«%s» в избранном.",
+	"star_snapshot":   "Hard link не создался, копия сохранена снимком и обновляется при каждом открытии `starred`.",
 	"star_status_no":  "не в избранном",
 	"star_status_yes": "в избранном",
 }
