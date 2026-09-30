@@ -74,7 +74,11 @@ type Model struct {
 
 func New(s *store.Store) *Model {
 	model := &Model{store: s}
-	s.Sync()
+
+	if err := s.Sync(); err != nil {
+		model.message = i18n.T("sync_failed", strings.ReplaceAll(err.Error(), "\n", "; "))
+	}
+
 	model.reload()
 
 	return model

@@ -200,7 +200,10 @@ func replaceExecutable(executable string, binary []byte) error {
 	}
 
 	if err := os.Rename(temporary, executable); err != nil {
-		os.Rename(backup, executable)
+		if restoreErr := os.Rename(backup, executable); restoreErr != nil {
+			return errors.Join(err, fmt.Errorf("%s was not restored, rename %s back to it: %w", executable, backup, restoreErr))
+		}
+
 		return err
 	}
 
