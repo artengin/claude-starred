@@ -39,7 +39,6 @@ type mode int
 
 const (
 	browsing mode = iota
-	searching
 	renaming
 	confirming
 	confirmingLive
@@ -49,6 +48,29 @@ const (
 var (
 	boldStyle = lipgloss.NewStyle().Bold(true)
 	dimStyle  = lipgloss.NewStyle().Faint(true)
+)
+
+type hint struct {
+	key   string
+	label string
+}
+
+const hintSeparator = " · "
+
+var (
+	projectHints = []hint{{"enter", "help_open"}, {"p", "hint_paths"}, {"?", "hint_help"}, {"q", "help_quit"}}
+	sessionHints = []hint{{"enter", "help_open"}, {"r", "hint_rename"}, {"d", "hint_unstar"}, {"p", "hint_paths"}, {"h", "help_back"}, {"?", "hint_help"}}
+	helpKeys     = []hint{
+		{"j / k, ↓ / ↑", "help_move"},
+		{"l, enter, →", "help_open"},
+		{"h, esc, ←", "help_back"},
+		{"g / G", "help_edges"},
+		{"r", "help_rename"},
+		{"d", "help_unstar"},
+		{"p", "help_paths"},
+		{"?", "hint_help"},
+		{"q", "help_quit"},
+	}
 )
 
 var russianLayout = strings.NewReplacer(
@@ -62,7 +84,6 @@ type Model struct {
 	level     level
 	root      string
 	cursor    [2]int
-	query     [2]string
 	mode      mode
 	input     string
 	showPaths bool
@@ -104,7 +125,7 @@ func (m *Model) handleKey(key tea.KeyMsg) tea.Cmd {
 		return tea.Quit
 	}
 
-	if key.Type == tea.KeyRunes && len(key.Runes) > 1 && m.mode != searching && m.mode != renaming {
+	if key.Type == tea.KeyRunes && len(key.Runes) > 1 && m.mode != renaming {
 		var commands []tea.Cmd
 
 		for _, r := range key.Runes {
@@ -115,10 +136,8 @@ func (m *Model) handleKey(key tea.KeyMsg) tea.Cmd {
 	}
 
 	switch m.mode {
-	case searching:
-		m.editInput(key, m.finishSearch, func() { m.query[m.level] = m.input; m.cursor[m.level] = 0 })
 	case renaming:
-		m.editInput(key, m.finishRename, nil)
+		m.editInput(key, m.finishRename)
 	case confirming:
 		m.finishUnstar(russianLayout.Replace(key.String()) == "y")
 	case confirmingLive:
@@ -148,8 +167,6 @@ func (m *Model) browse(key tea.KeyMsg) tea.Cmd {
 		return m.open()
 	case "h", "left", "esc":
 		m.back()
-	case "/":
-		m.mode, m.input = searching, m.query[m.level]
 	case "r":
 		if session := m.selectedSession(); session != nil {
 			m.mode, m.input = renaming, session.Name
@@ -171,19 +188,13 @@ func (m *Model) browse(key tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-func (m *Model) editInput(key tea.KeyMsg, done func(), changed func()) {
+func (m *Model) editInput(key tea.KeyMsg, done func()) {
 	switch key.Type {
 	case tea.KeyEnter:
 		done()
 		m.mode = browsing
-		return
 	case tea.KeyEsc:
-		if m.mode == searching {
-			m.query[m.level] = ""
-		}
-
 		m.mode = browsing
-		return
 	case tea.KeyBackspace:
 		runes := []rune(m.input)
 
@@ -194,17 +205,7 @@ func (m *Model) editInput(key tea.KeyMsg, done func(), changed func()) {
 		m.input = ""
 	case tea.KeyRunes, tea.KeySpace:
 		m.input += string(key.Runes)
-	default:
-		return
 	}
-
-	if changed != nil {
-		changed()
-	}
-}
-
-func (m *Model) finishSearch() {
-	m.query[m.level] = m.input
 }
 
 func (m *Model) finishRename() {
@@ -254,7 +255,7 @@ func (m *Model) open() tea.Cmd {
 		}
 
 		m.root = selected.root
-		m.level, m.cursor[sessionsLevel], m.query[sessionsLevel] = sessionsLevel, 0, ""
+		m.level, m.cursor[sessionsLevel] = sessionsLevel, 0
 
 		return nil
 	}
@@ -294,9 +295,7 @@ func (m *Model) finishOpen(confirmed bool) tea.Cmd {
 }
 
 func (m *Model) back() {
-	if m.query[m.level] != "" {
-		m.query[m.level] = ""
-	} else if m.level == sessionsLevel {
+	if m.level == sessionsLevel {
 		m.level = projectsLevel
 	}
 }
@@ -306,8 +305,8 @@ func (m *Model) move(delta int) {
 }
 
 func (m *Model) clampCursor() {
-	m.cursor[projectsLevel] = max(0, min(m.cursor[projectsLevel], len(m.visibleProjects())-1))
-	m.cursor[sessionsLevel] = max(0, min(m.cursor[sessionsLevel], len(m.visibleSessions())-1))
+	m.cursor[projectsLevel] = max(0, min(m.cursor[projectsLevel], len(m.projects)-1))
+	m.cursor[sessionsLevel] = max(0, min(m.cursor[sessionsLevel], len(m.sessions())-1))
 }
 
 func (m *Model) selection() (root, id string) {
@@ -325,13 +324,13 @@ func (m *Model) selection() (root, id string) {
 }
 
 func (m *Model) restoreSelection(root, id string) {
-	for i, p := range m.visibleProjects() {
+	for i, p := range m.projects {
 		if p.root == root {
 			m.cursor[projectsLevel] = i
 		}
 	}
 
-	for i, session := range m.visibleSessions() {
+	for i, session := range m.sessions() {
 		if session.ID == id {
 			m.cursor[sessionsLevel] = i
 		}
@@ -395,44 +394,22 @@ func (m *Model) currentProject() *project {
 	return nil
 }
 
-func (m *Model) visibleProjects() []project {
-	var visible []project
-
-	for _, p := range m.projects {
-		if matches(m.projectLabel(p.root), m.query[projectsLevel]) {
-			visible = append(visible, p)
-		}
-	}
-
-	return visible
-}
-
-func (m *Model) visibleSessions() []Session {
+func (m *Model) sessions() []Session {
 	current := m.currentProject()
 
 	if current == nil {
 		return nil
 	}
 
-	var visible []Session
-
-	for _, session := range current.sessions {
-		if matches(session.Name, m.query[sessionsLevel]) {
-			visible = append(visible, session)
-		}
-	}
-
-	return visible
+	return current.sessions
 }
 
 func (m *Model) selectedProject() *project {
-	projects := m.visibleProjects()
-
-	if len(projects) == 0 {
+	if len(m.projects) == 0 {
 		return nil
 	}
 
-	return &projects[max(0, min(m.cursor[projectsLevel], len(projects)-1))]
+	return &m.projects[max(0, min(m.cursor[projectsLevel], len(m.projects)-1))]
 }
 
 func (m *Model) selectedSession() *Session {
@@ -440,7 +417,7 @@ func (m *Model) selectedSession() *Session {
 		return nil
 	}
 
-	sessions := m.visibleSessions()
+	sessions := m.sessions()
 
 	if len(sessions) == 0 {
 		return nil
@@ -459,14 +436,14 @@ func (m *Model) rows() []row {
 	var rows []row
 
 	if m.level == projectsLevel {
-		for _, p := range m.visibleProjects() {
+		for _, p := range m.projects {
 			rows = append(rows, row{text: m.projectLabel(p.root), keepEnd: m.showPaths})
 		}
 
 		return rows
 	}
 
-	for _, session := range m.visibleSessions() {
+	for _, session := range m.sessions() {
 		rows = append(rows, row{text: m.sessionLabel(session), detail: m.sessionDetail(session)})
 	}
 
@@ -482,7 +459,7 @@ func (m *Model) projectLabel(root string) string {
 }
 
 func (m *Model) sessionLabel(session Session) string {
-	marker := "  "
+	marker := "○ "
 
 	if session.Live {
 		marker = "● "
@@ -518,10 +495,6 @@ func (m *Model) View() string {
 		title = m.projectLabel(m.root)
 	}
 
-	if query := m.query[m.level]; query != "" && m.mode != searching {
-		title += "  /" + query
-	}
-
 	lines := []string{
 		" " + boldStyle.Render("★ "+fitStart(title, m.lineWidth()-4)),
 		m.rule(),
@@ -533,8 +506,6 @@ func (m *Model) View() string {
 
 	if len(m.store.Records) == 0 {
 		lines = append(lines, "  "+dimStyle.Render(i18n.T("empty")))
-	} else if len(rows) == 0 {
-		lines = append(lines, "  "+dimStyle.Render(i18n.T("not_found")))
 	}
 
 	for i := top; i < len(rows) && i < top+visible; i++ {
@@ -589,34 +560,59 @@ func (m *Model) renderRow(r row, selected bool) string {
 }
 
 func (m *Model) footer() string {
-	text, style := m.footerText()
+	width := m.lineWidth() - 2
 
-	return " " + style.Render(fitEnd(text, m.lineWidth()-2))
+	if text := m.footerText(); text != "" {
+		return " " + fitEnd(text, width)
+	}
+
+	return " " + m.hints(width)
 }
 
-func (m *Model) footerText() (string, lipgloss.Style) {
-	plain := lipgloss.NewStyle()
-
+func (m *Model) footerText() string {
 	switch m.mode {
-	case searching:
-		return "/" + m.input + "█", plain
 	case renaming:
-		return i18n.T("prompt_rename") + m.input + "█", plain
+		return i18n.T("prompt_rename") + m.input + "█"
 	case confirming, confirmingLive:
 		if session := m.selectedSession(); session != nil {
-			return m.confirmation(*session), plain
+			return m.confirmation(*session)
 		}
 	}
 
-	if m.message != "" {
-		return m.message, plain
-	}
+	return m.message
+}
+
+func (m *Model) hints(width int) string {
+	hints := sessionHints
 
 	if m.level == projectsLevel {
-		return i18n.T("hint_projects"), dimStyle
+		hints = projectHints
 	}
 
-	return i18n.T("hint_sessions"), dimStyle
+	var parts []string
+	used := 0
+
+	for i, h := range hints {
+		description := i18n.T(h.label)
+		size := runewidth.StringWidth(h.key) + 1 + runewidth.StringWidth(description)
+
+		if i > 0 {
+			size += runewidth.StringWidth(hintSeparator)
+		}
+
+		if used+size > width {
+			if i == 0 {
+				parts = append(parts, dimStyle.Render(fitEnd(h.key+" "+description, width)))
+			}
+
+			break
+		}
+
+		used += size
+		parts = append(parts, boldStyle.Render(h.key)+" "+dimStyle.Render(description))
+	}
+
+	return strings.Join(parts, dimStyle.Render(hintSeparator))
 }
 
 func (m *Model) confirmation(session Session) string {
@@ -639,28 +635,13 @@ func (m *Model) lineWidth() int {
 }
 
 func (m *Model) helpView() string {
-	keys := [][2]string{
-		{"j / k, ↓ / ↑", "help_move"},
-		{"l, enter, →", "help_open"},
-		{"h, esc, ←", "help_back"},
-		{"/", "help_search"},
-		{"g / G", "help_edges"},
-		{"r", "help_rename"},
-		{"d", "help_unstar"},
-		{"p", "help_paths"},
-		{"q", "help_quit"},
-	}
 	lines := []string{" " + boldStyle.Render(i18n.T("help")), ""}
 
-	for _, key := range keys {
-		lines = append(lines, "   "+lipgloss.NewStyle().Width(16).Render(key[0])+i18n.T(key[1]))
+	for _, h := range helpKeys {
+		lines = append(lines, "   "+lipgloss.NewStyle().Width(16).Render(h.key)+i18n.T(h.label))
 	}
 
 	return strings.Join(append(lines, "", " "+dimStyle.Render(i18n.T("help_close"))), "\n")
-}
-
-func matches(text, query string) bool {
-	return query == "" || strings.Contains(strings.ToLower(text), strings.ToLower(query))
 }
 
 func shortenHome(path string) string {

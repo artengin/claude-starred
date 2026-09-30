@@ -9,6 +9,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 
 	"github.com/artengin/claude-starred/internal/store"
 )
@@ -20,6 +22,7 @@ func newModel(t *testing.T) (*Model, *store.Store) {
 	t.Setenv("LC_ALL", "")
 	t.Setenv("LC_MESSAGES", "")
 	t.Setenv("LANG", "en_US.UTF-8")
+	lipgloss.SetColorProfile(termenv.Ascii)
 	s, _ := store.Open(filepath.Join(dir, "data"))
 	now := time.Now()
 
@@ -101,18 +104,22 @@ func TestSessionsShowWorktreeLabel(t *testing.T) {
 	assertContains(t, m.View(), "Checkout flow", "Price migration  shop-2")
 }
 
-func TestSearchFiltersAndEscClears(t *testing.T) {
+func TestSessionsAreMarkedOnlineOrOffline(t *testing.T) {
 	m, _ := newModel(t)
-	press(m, "/", "s", "h", "o")
+	sessions := filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), "sessions")
+	must(t, os.MkdirAll(sessions, 0o700))
+	must(t, os.WriteFile(filepath.Join(sessions, "1.json"), []byte(fmt.Sprintf(`{"pid":%d,"sessionId":"c"}`, os.Getpid())), 0o600))
+	m.reload()
+	press(m, "enter")
+	assertContains(t, m.View(), "● Meeting notes", "○ Old notes")
+}
 
-	if rows := m.rows(); len(rows) != 1 || rows[0].text != "shop" {
-		t.Fatalf("unexpected rows: %+v", rows)
-	}
-
+func TestEscGoesBack(t *testing.T) {
+	m, _ := newModel(t)
 	press(m, "enter", "esc")
 
-	if len(m.rows()) != 2 {
-		t.Fatal("esc should clear the search")
+	if m.level != projectsLevel {
+		t.Fatal("esc should go back to projects")
 	}
 }
 
@@ -172,26 +179,11 @@ func TestEnterOnLiveSessionAsksForConfirmation(t *testing.T) {
 	}
 }
 
-func TestRenameOutOfSearchKeepsCursorOnVisibleRow(t *testing.T) {
-	m, _ := newModel(t)
-	press(m, "j", "enter", "/", "c", "h", "e", "c", "k", "enter", "r", "ctrl+u", "P", "a", "y", "enter")
-
-	if rows := m.rows(); len(rows) != 0 || m.cursor[sessionsLevel] != 0 {
-		t.Fatalf("cursor must be clamped to the visible rows: %+v, cursor %d", rows, m.cursor[sessionsLevel])
-	}
-
-	press(m, "esc")
-
-	if session := m.selectedSession(); session == nil || session.Name != "Pay" {
-		t.Fatalf("expected the renamed session under the cursor: %+v", session)
-	}
-}
-
 func TestProjectCursorFollowsTheProjectAfterUnstar(t *testing.T) {
 	m, _ := newModel(t)
 	press(m, "enter", "d", "y", "h")
 
-	if projects := m.visibleProjects(); m.cursor[projectsLevel] != 1 || projects[1].root != "/work/notes" {
+	if projects := m.projects; m.cursor[projectsLevel] != 1 || projects[1].root != "/work/notes" {
 		t.Fatalf("cursor must stay on the reordered project: %d %+v", m.cursor[projectsLevel], projects)
 	}
 }
@@ -207,10 +199,36 @@ func TestRussianLayoutKeys(t *testing.T) {
 
 func TestKeysArrivingTogetherAreHandledOneByOne(t *testing.T) {
 	m, _ := newModel(t)
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/sh")})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("jl")})
 
-	if m.mode != searching || m.query[projectsLevel] != "sh" {
-		t.Fatalf("mode %v, query %q", m.mode, m.query[projectsLevel])
+	if m.level != sessionsLevel || m.root != "/work/shop" {
+		t.Fatalf("level %v, root %q", m.level, m.root)
+	}
+}
+
+func TestRenameAcceptsRunesArrivingTogether(t *testing.T) {
+	m, s := newModel(t)
+	press(m, "j", "enter", "r", "ctrl+u")
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("Pay")})
+	press(m, "enter")
+
+	if s.Find("a").Name != "Pay" {
+		t.Fatalf("rename failed: %+v", s.Find("a"))
+	}
+
+	if session := m.selectedSession(); session == nil || session.Name != "Pay" {
+		t.Fatalf("expected the renamed session under the cursor: %+v", session)
+	}
+}
+
+func TestFooterDropsHintsThatDoNotFit(t *testing.T) {
+	m, _ := newModel(t)
+	press(m, "enter")
+	m.Update(tea.WindowSizeMsg{Width: 40, Height: 20})
+	footer := m.footer()
+
+	if footer != " enter open · r rename · d unstar" {
+		t.Fatalf("unexpected footer %q", footer)
 	}
 }
 

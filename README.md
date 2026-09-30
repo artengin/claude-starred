@@ -23,8 +23,8 @@ Star the sessions worth coming back to with `/star`, then find and reopen them f
  ──────────────────────────────────────
 
  > ● Checkout flow redesign
-     Payment retries
-     Price migration
+   ○ Payment retries
+   ○ Price migration
 ```
 
 ## Why
@@ -37,10 +37,10 @@ Star the sessions worth coming back to with `/star`, then find and reopen them f
 ## Features
 
 - `/star` inside any Claude Code session adds it to the list and asks for a name.
-- One tree for all projects: project first, then its sessions. Git worktrees are grouped under their main repository.
+- One tree for all projects: project first, then its sessions. Sessions from every git worktree of a repository are shown together under that repository.
 - `Enter` reopens a session right in your current terminal, in its original directory.
 - Starred sessions are kept safe from Claude Code's cleanup.
-- Rename, unstar and search without leaving the keyboard.
+- Rename and unstar without leaving the keyboard.
 - Linux, macOS and Windows. English and Russian interface.
 
 ## Quick start
@@ -77,8 +77,7 @@ Star the sessions worth coming back to with `/star`, then find and reopen them f
 |---|---|
 | `j` / `k`, arrows | down / up |
 | `l`, `Enter`, `→` | open |
-| `h`, `Esc`, `←` | clear the search, or go back |
-| `/` | search |
+| `h`, `Esc`, `←` | go back |
 | `g` / `G` | first / last |
 | `r` | rename |
 | `d` | unstar (asks for confirmation) |
@@ -86,7 +85,7 @@ Star the sessions worth coming back to with `/star`, then find and reopen them f
 | `?` | help |
 | `q` | quit |
 
-`●` marks a session that is running right now. Opening it asks for confirmation, because two Claude processes on one session write to the same transcript.
+`●` marks a session that is running right now, `○` one that is not. Opening a running session asks for confirmation, because two Claude processes on one session write to the same transcript.
 
 ## Good to know
 
