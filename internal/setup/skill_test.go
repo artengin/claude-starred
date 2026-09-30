@@ -73,19 +73,23 @@ func TestVerifyChecksum(t *testing.T) {
 func TestSkillUsesTheBareNameWhenTheBinaryIsOnPath(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
 	bin := t.TempDir()
-	executable := filepath.Join(bin, "starred")
+	executable := filepath.Join(bin, binaryName())
 	must(t, os.WriteFile(executable, []byte("#!/bin/sh\n"), 0o755))
 	t.Setenv("PATH", bin)
 
 	command, err := skillCommand(executable)
 	must(t, err)
 
-	if command != "starred" {
+	if command != binaryName() {
 		t.Fatalf("expected the bare name, got %s", command)
 	}
 
 	if _, err := skillCommand("/opt/tools (x86)/starred"); err == nil {
 		t.Fatal("a path with parentheses must be rejected when it is not on PATH")
+	}
+
+	if command, err := skillCommand(filepath.Join(t.TempDir(), "bin", "starred")); err != nil || !strings.HasPrefix(command, "'") {
+		t.Fatalf("a plain path off PATH must be quoted, got %q, %v", command, err)
 	}
 }
 

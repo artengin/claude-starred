@@ -8,7 +8,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.30
 	github.com/muesli/termenv v0.16.0
 	golang.org/x/sys v0.48.0
-	golang.org/x/text v0.3.8
+	golang.org/x/text v0.42.0
 )
 
 require (

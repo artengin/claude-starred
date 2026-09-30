@@ -70,7 +70,7 @@ func skillCommand(executable string) (string, error) {
 		return filepath.Base(executable), nil
 	}
 
-	if strings.ContainsAny(executable, "'`()$\\\"") {
+	if strings.ContainsAny(filepath.ToSlash(executable), "'`()$\\\"") {
 		return "", fmt.Errorf("%s contains characters that break the skill; move the binary to a plain path or add it to PATH", executable)
 	}
 
