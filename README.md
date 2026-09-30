@@ -6,33 +6,16 @@
 Bookmarks for your Claude Code sessions.
 
 Star the sessions worth coming back to with `/star`, then find and reopen them from one small tree in your terminal. Starred sessions survive Claude Code's automatic cleanup.
-
-```
- ★ Starred
- ──────────────────────────────────────
-
- > api-server
-   my-app
-   web-client
-```
-
-`Enter` opens a project:
-
-```
- ★ my-app
- ──────────────────────────────────────
-
- > ● Checkout flow redesign
-   ○ Payment retries
-   ○ Price migration
-```
+<p align="center">
+  <img src="demo/demo.gif" alt="starred demo" width="650px">
+</p>
 
 ## Why
 
 - **Good sessions get lost.** After a few weeks there are dozens of sessions across projects, and the one with the right context is hard to find.
 - **Old sessions disappear.** Claude Code deletes sessions after 30 days by default, including the ones you meant to come back to.
 
-`starred` keeps only the sessions you chose, under names you gave them, for as long as you need them.
+`starred` keeps only the sessions you chose, under names you gave them, grouped by project, for as long as you need them.
 
 ## Features
 
@@ -71,6 +54,15 @@ Star the sessions worth coming back to with `/star`, then find and reopen them f
 
 **With Go:** `go install github.com/artengin/claude-starred/cmd/starred@latest && starred install`.
 
+## Update and uninstall
+
+```sh
+starred update
+starred uninstall
+```
+
+`update` replaces the binary and refreshes the `/star` skill. `uninstall` removes the `/star` skill, the starred list with its kept copies, and the binary. If Claude has already deleted some starred sessions, you are warned that they will be lost.
+
 ## Keys
 
 | Key | Action |
@@ -85,7 +77,7 @@ Star the sessions worth coming back to with `/star`, then find and reopen them f
 | `?` | help |
 | `q` | quit |
 
-`●` marks a session that is running right now, `○` one that is not. Opening a running session asks for confirmation, because two Claude processes on one session write to the same transcript.
+`●` marks a session that is running right now and ○ one that is not; the list refreshes on its own. Opening a running session asks for confirmation, because two Claude processes on one session would write to the same transcript.
 
 ## Good to know
 
@@ -94,23 +86,6 @@ Star the sessions worth coming back to with `/star`, then find and reopen them f
 - `starred` never changes Claude Code's settings or transcripts. Names are stored separately, so they don't show up in Claude's `/resume`.
 - The interface language follows `LANG`.
 - Claude Code's session format is undocumented, so a Claude Code update may break `starred`.
-
-## Update and uninstall
-
-```sh
-starred update
-starred uninstall
-```
-
-`update` replaces the binary and refreshes the `/star` skill. `uninstall` removes the `/star` skill, the starred list with its kept copies, and the binary. If Claude has already deleted some starred sessions, you are warned that they will be lost.
-
-## Data
-
-Starred sessions and their kept copies are stored in:
-
-- Linux: `~/.local/share/claude-starred` (or `$XDG_DATA_HOME/claude-starred`)
-- macOS: `~/Library/Application Support/claude-starred`
-- Windows: `%LOCALAPPDATA%\claude-starred`
 
 ## License
 
