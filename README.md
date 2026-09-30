@@ -54,6 +54,15 @@ Star the sessions worth coming back to with `/star`, then find and reopen them f
 
 **With Go:** `go install github.com/artengin/claude-starred/cmd/starred@latest && starred install`.
 
+## Update and uninstall
+
+```sh
+starred update
+starred uninstall
+```
+
+`update` replaces the binary and refreshes the `/star` skill. `uninstall` removes the `/star` skill, the starred list with its kept copies, and the binary. If Claude has already deleted some starred sessions, you are warned that they will be lost.
+
 ## Keys
 
 | Key | Action |
@@ -77,23 +86,6 @@ Star the sessions worth coming back to with `/star`, then find and reopen them f
 - `starred` never changes Claude Code's settings or transcripts. Names are stored separately, so they don't show up in Claude's `/resume`.
 - The interface language follows `LANG`.
 - Claude Code's session format is undocumented, so a Claude Code update may break `starred`.
-
-## Update and uninstall
-
-```sh
-starred update
-starred uninstall
-```
-
-`update` replaces the binary and refreshes the `/star` skill. `uninstall` removes the `/star` skill, the starred list with its kept copies, and the binary. If Claude has already deleted some starred sessions, you are warned that they will be lost.
-
-## Data
-
-Starred sessions and their kept copies are stored in:
-
-- Linux: `~/.local/share/claude-starred` (or `$XDG_DATA_HOME/claude-starred`)
-- macOS: `~/Library/Application Support/claude-starred`
-- Windows: `%LOCALAPPDATA%\claude-starred`
 
 ## License
 
