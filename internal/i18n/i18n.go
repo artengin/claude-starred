@@ -1,0 +1,99 @@
+package i18n
+
+import (
+	"fmt"
+	"os"
+	"strings"
+)
+
+var english = map[string]string{
+	"title":           "Starred",
+	"empty":           "Nothing starred yet. Run /star inside a Claude Code session.",
+	"not_found":       "Nothing found",
+	"lost":            "(lost)",
+	"hint_projects":   "enter open  p paths  / search  ? help  q quit",
+	"hint_sessions":   "enter open  r rename  d unstar  p paths  / search  h back",
+	"prompt_rename":   "Name: ",
+	"confirm_unstar":  "Unstar «%s»? (y/n)",
+	"confirm_last":    "Claude already deleted «%s», this is the last copy. Unstar and lose it? (y/n)",
+	"confirm_live":    "«%s» is open in another terminal. Open it here as well? (y/n)",
+	"renamed":         "Renamed: %s",
+	"unstarred":       "Unstarred: %s",
+	"lost_session":    "The transcript is gone, the session cannot be opened",
+	"help":            "Keys",
+	"help_move":       "down / up",
+	"help_open":       "open",
+	"help_back":       "back, clear search",
+	"help_search":     "search",
+	"help_edges":      "first / last",
+	"help_rename":     "rename",
+	"help_unstar":     "unstar",
+	"help_paths":      "names / full paths",
+	"help_quit":       "quit",
+	"help_close":      "Any key to go back",
+	"moved_from":      "%s is gone, opening from %s",
+	"star_done":       "Starred «%s».",
+	"star_snapshot":   "Hard link failed, so the kept copy is a snapshot; it is refreshed each time you open `starred`.",
+	"star_status_no":  "not starred",
+	"star_status_yes": "starred",
+}
+
+var russian = map[string]string{
+	"title":           "Избранное",
+	"empty":           "В избранном пусто. Выполните /star внутри сессии Claude Code.",
+	"not_found":       "Ничего не найдено",
+	"lost":            "(потеряна)",
+	"hint_projects":   "enter открыть  p пути  / поиск  ? помощь  q выход",
+	"hint_sessions":   "enter открыть  r имя  d убрать  p пути  / поиск  h назад",
+	"prompt_rename":   "Имя: ",
+	"confirm_unstar":  "Убрать «%s» из избранного? (y/n)",
+	"confirm_last":    "Claude уже удалил «%s», это последняя копия. Убрать и потерять её? (y/n)",
+	"confirm_live":    "«%s» открыта в другом терминале. Открыть и здесь? (y/n)",
+	"renamed":         "Переименовано: %s",
+	"unstarred":       "Убрано из избранного: %s",
+	"lost_session":    "Транскрипта нет, сессию не открыть",
+	"help":            "Клавиши",
+	"help_move":       "вниз / вверх",
+	"help_open":       "открыть",
+	"help_back":       "назад, сбросить поиск",
+	"help_search":     "поиск",
+	"help_edges":      "в начало / в конец",
+	"help_rename":     "переименовать",
+	"help_unstar":     "убрать из избранного",
+	"help_paths":      "имена / полные пути",
+	"help_quit":       "выход",
+	"help_close":      "Любая клавиша, чтобы вернуться",
+	"moved_from":      "Каталога %s больше нет, открываю из %s",
+	"star_done":       "«%s» в избранном.",
+	"star_snapshot":   "Hard link не создался, копия сохранена снимком и обновляется при каждом открытии `starred`.",
+	"star_status_no":  "не в избранном",
+	"star_status_yes": "в избранном",
+}
+
+func messages() map[string]string {
+	for _, name := range []string{"LC_ALL", "LC_MESSAGES", "LANG"} {
+		if value := os.Getenv(name); value != "" {
+			if strings.HasPrefix(value, "ru") {
+				return russian
+			}
+
+			return english
+		}
+	}
+
+	return english
+}
+
+func T(key string, args ...any) string {
+	message, ok := messages()[key]
+
+	if !ok {
+		message = english[key]
+	}
+
+	if len(args) == 0 {
+		return message
+	}
+
+	return fmt.Sprintf(message, args...)
+}
