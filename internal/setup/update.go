@@ -33,6 +33,10 @@ type release struct {
 }
 
 func Update(currentVersion, executable string) (string, bool, error) {
+	if currentVersion == "dev" {
+		return "", false, errors.New("this is a development build; update it with `go install` or reinstall from a release")
+	}
+
 	latest, err := latestRelease()
 
 	if err != nil {

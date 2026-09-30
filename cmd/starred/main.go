@@ -151,6 +151,10 @@ func star(s *store.Store, args []string) error {
 		return err
 	}
 
+	if transcript.Cwd == "" {
+		return errors.New(i18n.T("no_transcript", id))
+	}
+
 	record := store.Record{
 		ID:         id,
 		Name:       firstNonEmpty(*name, currentName(s, id, transcript), transcript.AITitle, id),

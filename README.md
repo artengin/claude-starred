@@ -11,8 +11,8 @@ Star the sessions worth coming back to with `/star`, then find and reopen them f
  ★ Starred
  ──────────────────────────────────────
 
- > my-app
-   api-server
+ > api-server
+   my-app
    web-client
 ```
 

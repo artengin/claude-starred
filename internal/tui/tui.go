@@ -10,6 +10,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
+	"golang.org/x/text/collate"
+	"golang.org/x/text/language"
 
 	"github.com/artengin/claude-starred/internal/claude"
 	"github.com/artengin/claude-starred/internal/i18n"
@@ -18,9 +20,8 @@ import (
 
 type Session struct {
 	store.Record
-	Live    bool
-	Lost    bool
-	ModTime time.Time
+	Live bool
+	Lost bool
 }
 
 type project struct {
@@ -48,6 +49,7 @@ const (
 var (
 	boldStyle = lipgloss.NewStyle().Bold(true)
 	dimStyle  = lipgloss.NewStyle().Faint(true)
+	collator  = collate.New(language.Und, collate.IgnoreCase, collate.Numeric)
 )
 
 type hint struct {
@@ -55,7 +57,12 @@ type hint struct {
 	label string
 }
 
-const hintSeparator = " · "
+const (
+	hintSeparator   = " · "
+	refreshInterval = 2 * time.Second
+)
+
+type tickMsg struct{}
 
 var (
 	projectHints = []hint{{"enter", "help_open"}, {"p", "hint_paths"}, {"?", "hint_help"}, {"q", "help_quit"}}
@@ -88,6 +95,7 @@ type Model struct {
 	input     string
 	showPaths bool
 	message   string
+	failure   string
 	width     int
 	height    int
 	Selected  *Session
@@ -106,7 +114,7 @@ func New(s *store.Store) *Model {
 }
 
 func (m *Model) Init() tea.Cmd {
-	return nil
+	return tick()
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -115,14 +123,28 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 	case tea.KeyMsg:
 		return m, m.handleKey(msg)
+	case tickMsg:
+		if m.mode == browsing {
+			m.reload()
+		}
+
+		return m, tick()
 	}
 
 	return m, nil
 }
 
+func tick() tea.Cmd {
+	return tea.Tick(refreshInterval, func(time.Time) tea.Msg { return tickMsg{} })
+}
+
 func (m *Model) handleKey(key tea.KeyMsg) tea.Cmd {
 	if key.Type == tea.KeyCtrlC {
 		return tea.Quit
+	}
+
+	if key.Paste && m.mode != renaming {
+		return nil
 	}
 
 	if key.Type == tea.KeyRunes && len(key.Runes) > 1 && m.mode != renaming {
@@ -240,10 +262,6 @@ func (m *Model) finishUnstar(confirmed bool) {
 
 	m.reload()
 	m.message = i18n.T("unstarred", session.Name)
-
-	if m.currentProject() == nil {
-		m.level = projectsLevel
-	}
 }
 
 func (m *Model) open() tea.Cmd {
@@ -266,12 +284,17 @@ func (m *Model) open() tea.Cmd {
 		return nil
 	}
 
-	if session.Lost {
+	if err := m.store.SyncRecord(session.Record); err != nil {
+		m.message = i18n.T("sync_failed", err.Error())
+		return nil
+	}
+
+	if m.store.Lost(session.ID) {
 		m.message = i18n.T("lost_session")
 		return nil
 	}
 
-	if claude.LiveSessionIDs()[session.ID] {
+	if session.Live {
 		m.mode = confirmingLive
 		return nil
 	}
@@ -341,9 +364,10 @@ func (m *Model) restoreSelection(root, id string) {
 
 func (m *Model) reload() {
 	root, id := m.selection()
+	m.failure = ""
 
 	if err := m.store.Reload(); err != nil {
-		m.message = err.Error()
+		m.failure = err.Error()
 	}
 
 	live := claude.LiveSessionIDs()
@@ -359,29 +383,33 @@ func (m *Model) reload() {
 			m.projects = append(m.projects, project{root: record.Project})
 		}
 
-		session := Session{Record: record, Live: live[record.ID], Lost: m.store.Lost(record.ID), ModTime: modTime(record, m.store)}
+		session := Session{Record: record, Live: live[record.ID], Lost: m.store.Lost(record.ID)}
 		m.projects[index].sessions = append(m.projects[index].sessions, session)
 	}
 
 	for _, p := range m.projects {
-		sort.SliceStable(p.sessions, func(a, b int) bool { return p.sessions[a].ModTime.After(p.sessions[b].ModTime) })
+		sort.SliceStable(p.sessions, func(a, b int) bool { return before(p.sessions[a].Name, p.sessions[b].Name) })
 	}
 
 	sort.SliceStable(m.projects, func(a, b int) bool {
-		return m.projects[a].sessions[0].ModTime.After(m.projects[b].sessions[0].ModTime)
+		first, second := filepath.Base(m.projects[a].root), filepath.Base(m.projects[b].root)
+
+		if first == second {
+			return m.projects[a].root < m.projects[b].root
+		}
+
+		return before(first, second)
 	})
+
+	if m.level == sessionsLevel && m.currentProject() == nil {
+		m.level = projectsLevel
+	}
 
 	m.restoreSelection(root, id)
 }
 
-func modTime(record store.Record, s *store.Store) time.Time {
-	for _, path := range []string{record.Transcript, s.CopyPath(record.ID)} {
-		if info, err := os.Stat(path); err == nil {
-			return info.ModTime()
-		}
-	}
-
-	return record.StarredAt
+func before(a, b string) bool {
+	return collator.CompareString(a, b) < 0
 }
 
 func (m *Model) currentProject() *project {
@@ -579,7 +607,11 @@ func (m *Model) footerText() string {
 		}
 	}
 
-	return m.message
+	if m.message != "" {
+		return m.message
+	}
+
+	return m.failure
 }
 
 func (m *Model) hints(width int) string {
