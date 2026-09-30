@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -24,24 +25,20 @@ func newModel(t *testing.T) (*Model, *store.Store) {
 	t.Setenv("LANG", "en_US.UTF-8")
 	lipgloss.SetColorProfile(termenv.Ascii)
 	s, _ := store.Open(filepath.Join(dir, "data"))
-	now := time.Now()
 
 	sessions := []struct {
 		id, name, cwd, project string
-		age                    time.Duration
 	}{
-		{"a", "Checkout flow", "/work/shop", "/work/shop", time.Hour},
-		{"b", "Price migration", "/work/shop-2", "/work/shop", 2 * time.Hour},
-		{"c", "Meeting notes", "/work/notes", "/work/notes", 30 * time.Minute},
-		{"d", "Old notes", "/work/notes", "/work/notes", 3 * time.Hour},
+		{"a", "Checkout flow", "/work/shop", "/work/shop"},
+		{"b", "Price migration", "/work/shop-2", "/work/shop"},
+		{"c", "Meeting notes", "/work/notes", "/work/notes"},
+		{"d", "Old notes", "/work/notes", "/work/notes"},
 	}
 
 	for _, session := range sessions {
 		transcript := filepath.Join(dir, "claude", "projects", "-x", session.id+".jsonl")
 		must(t, os.MkdirAll(filepath.Dir(transcript), 0o700))
 		must(t, os.WriteFile(transcript, []byte("{}\n"), 0o600))
-		modified := now.Add(-session.age)
-		must(t, os.Chtimes(transcript, modified, modified))
 
 		if err := s.Star(store.Record{ID: session.id, Name: session.name, Cwd: session.cwd, Project: session.project, Transcript: transcript}); err != nil {
 			t.Fatal(err)
@@ -85,13 +82,13 @@ func assertContains(t *testing.T, view string, expected ...string) {
 	}
 }
 
-func TestProjectsAreSortedByActivityAndShowNamesOrPaths(t *testing.T) {
+func TestProjectsAreSortedByNameAndShowNamesOrPaths(t *testing.T) {
 	m, _ := newModel(t)
 	view := m.View()
 	assertContains(t, view, "Starred", "> notes", "shop")
 
 	if strings.Index(view, "notes") > strings.Index(view, "shop") {
-		t.Error("most recently active project should come first")
+		t.Error("projects should be sorted by name")
 	}
 
 	press(m, "p")
@@ -179,12 +176,92 @@ func TestEnterOnLiveSessionAsksForConfirmation(t *testing.T) {
 	}
 }
 
-func TestProjectCursorFollowsTheProjectAfterUnstar(t *testing.T) {
+func TestCursorFollowsTheRenamedSessionWhenItMoves(t *testing.T) {
 	m, _ := newModel(t)
-	press(m, "enter", "d", "y", "h")
+	press(m, "enter", "r", "ctrl+u", "Z", "z", "z", "enter")
 
-	if projects := m.projects; m.cursor[projectsLevel] != 1 || projects[1].root != "/work/notes" {
-		t.Fatalf("cursor must stay on the reordered project: %d %+v", m.cursor[projectsLevel], projects)
+	if session := m.selectedSession(); m.cursor[sessionsLevel] != 1 || session == nil || session.Name != "Zzz" {
+		t.Fatalf("cursor must follow the renamed session: %d %+v", m.cursor[sessionsLevel], session)
+	}
+}
+
+func TestTickReloadsTheListWhileBrowsing(t *testing.T) {
+	m, s := newModel(t)
+	transcript := filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), "projects", "-x", "e.jsonl")
+	must(t, os.WriteFile(transcript, []byte("{}\n"), 0o600))
+	other, err := store.Open(s.Dir)
+	must(t, err)
+	must(t, other.Star(store.Record{ID: "e", Name: "Alpha", Cwd: "/work/api", Project: "/work/api", Transcript: transcript}))
+
+	press(m, "enter", "r")
+	m.Update(tickMsg{})
+
+	if len(m.projects) != 2 {
+		t.Fatal("tick must not reload while a name is being edited")
+	}
+
+	press(m, "esc", "h")
+	m.Update(tickMsg{})
+
+	if len(m.projects) != 3 || m.projects[0].root != "/work/api" {
+		t.Fatalf("tick must pick up a session starred elsewhere: %+v", m.projects)
+	}
+}
+
+func TestTickKeepsCursorAndUpdatesMarkers(t *testing.T) {
+	m, s := newModel(t)
+	press(m, "enter", "j")
+	other, err := store.Open(s.Dir)
+	must(t, err)
+	must(t, other.Rename("c", "Zzz"))
+	sessions := filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), "sessions")
+	must(t, os.MkdirAll(sessions, 0o700))
+	must(t, os.WriteFile(filepath.Join(sessions, "1.json"), []byte(fmt.Sprintf(`{"pid":%d,"sessionId":"d"}`, os.Getpid())), 0o600))
+
+	m.Update(tickMsg{})
+
+	if session := m.selectedSession(); m.cursor[sessionsLevel] != 0 || session == nil || session.ID != "d" {
+		t.Fatalf("cursor must stay on the same session after a reorder: %d %+v", m.cursor[sessionsLevel], session)
+	}
+
+	assertContains(t, m.View(), "● Old notes", "○ Zzz")
+}
+
+func TestTickLeavesAProjectThatDisappeared(t *testing.T) {
+	m, s := newModel(t)
+	press(m, "j", "enter")
+	other, err := store.Open(s.Dir)
+	must(t, err)
+	must(t, other.Unstar("a"))
+	must(t, other.Unstar("b"))
+
+	m.Update(tickMsg{})
+
+	if m.level != projectsLevel {
+		t.Fatal("tick must go back to projects when the open project is gone")
+	}
+}
+
+func TestProjectsWithTheSameNameAreOrderedByPath(t *testing.T) {
+	m, s := newModel(t)
+	transcript := filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), "projects", "-x", "e.jsonl")
+	must(t, os.WriteFile(transcript, []byte("{}\n"), 0o600))
+	must(t, s.Star(store.Record{ID: "e", Name: "Other", Cwd: "/home/shop", Project: "/home/shop", Transcript: transcript}))
+	m.reload()
+
+	roots := []string{m.projects[0].root, m.projects[1].root, m.projects[2].root}
+
+	if expected := []string{"/work/notes", "/home/shop", "/work/shop"}; !slices.Equal(roots, expected) {
+		t.Fatalf("unexpected order: %v", roots)
+	}
+}
+
+func TestNamesAreSortedNaturally(t *testing.T) {
+	names := []string{"Session 10", "Ёлка", "Яблоко", "session 2", "apple"}
+	sort.SliceStable(names, func(a, b int) bool { return before(names[a], names[b]) })
+
+	if expected := []string{"apple", "session 2", "Session 10", "Ёлка", "Яблоко"}; !slices.Equal(names, expected) {
+		t.Fatalf("unexpected order: %v", names)
 	}
 }
 
@@ -203,6 +280,27 @@ func TestKeysArrivingTogetherAreHandledOneByOne(t *testing.T) {
 
 	if m.level != sessionsLevel || m.root != "/work/shop" {
 		t.Fatalf("level %v, root %q", m.level, m.root)
+	}
+}
+
+func TestPastedTextIsNotTreatedAsKeys(t *testing.T) {
+	m, s := newModel(t)
+	press(m, "enter")
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("dy"), Paste: true})
+
+	if len(s.Records) != 4 || m.mode != browsing {
+		t.Fatalf("pasted text must be ignored: %d records, mode %v", len(s.Records), m.mode)
+	}
+}
+
+func TestOpenRestoresATranscriptDeletedAfterStart(t *testing.T) {
+	m, s := newModel(t)
+	transcript := s.Find("c").Transcript
+	must(t, os.Remove(transcript))
+	press(m, "enter", "enter")
+
+	if m.Selected == nil || m.Selected.ID != "c" || !exists(transcript) {
+		t.Fatalf("open must bring the transcript back before resuming: %+v", m.Selected)
 	}
 }
 
@@ -230,6 +328,12 @@ func TestFooterDropsHintsThatDoNotFit(t *testing.T) {
 	if footer != " enter open · r rename · d unstar" {
 		t.Fatalf("unexpected footer %q", footer)
 	}
+}
+
+func exists(path string) bool {
+	_, err := os.Stat(path)
+
+	return err == nil
 }
 
 func must(t *testing.T, err error) {

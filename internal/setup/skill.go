@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -55,7 +56,37 @@ func InstallSkill(executable string) error {
 		return err
 	}
 
-	return os.WriteFile(path, []byte(fmt.Sprintf(skillTemplate, shellQuote(executable))), 0o644)
+	command, err := skillCommand(executable)
+
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, []byte(fmt.Sprintf(skillTemplate, command)), 0o644)
+}
+
+func skillCommand(executable string) (string, error) {
+	if onPath, err := exec.LookPath(filepath.Base(executable)); err == nil && sameFile(onPath, executable) {
+		return filepath.Base(executable), nil
+	}
+
+	if strings.ContainsAny(executable, "'`()$\\\"") {
+		return "", fmt.Errorf("%s contains characters that break the skill; move the binary to a plain path or add it to PATH", executable)
+	}
+
+	return shellQuote(executable), nil
+}
+
+func sameFile(a, b string) bool {
+	first, err := os.Stat(a)
+
+	if err != nil {
+		return false
+	}
+
+	second, err := os.Stat(b)
+
+	return err == nil && os.SameFile(first, second)
 }
 
 func SkillInstalled() bool {

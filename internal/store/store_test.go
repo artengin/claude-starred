@@ -223,6 +223,20 @@ func TestIncompleteLastLineIsDroppedFromHistory(t *testing.T) {
 	}
 }
 
+func TestUnstarKeepsTheCopyWhenTheListCannotBeWritten(t *testing.T) {
+	s, _ := starred(t)
+	must(t, os.Chmod(s.Dir, 0o500))
+	t.Cleanup(func() { _ = os.Chmod(s.Dir, 0o700) })
+
+	if err := s.Unstar("abc"); err == nil {
+		t.Skip("the list is writable here, cannot simulate a failed write")
+	}
+
+	if !exists(s.CopyPath("abc")) {
+		t.Fatal("the copy must survive a failed unstar")
+	}
+}
+
 func TestUnstarRemovesHistory(t *testing.T) {
 	s, transcript := starred(t)
 	must(t, os.Remove(transcript))

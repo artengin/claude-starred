@@ -103,13 +103,7 @@ func (s *Store) Rename(id, name string) error {
 }
 
 func (s *Store) Unstar(id string) error {
-	for _, path := range []string{s.CopyPath(id), s.HistoryPath(id)} {
-		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-	}
-
-	return s.modify(func(records []Record) ([]Record, error) {
+	err := s.modify(func(records []Record) ([]Record, error) {
 		var kept []Record
 
 		for _, record := range records {
@@ -120,6 +114,18 @@ func (s *Store) Unstar(id string) error {
 
 		return kept, nil
 	})
+
+	if err != nil {
+		return err
+	}
+
+	for _, path := range []string{s.CopyPath(id), s.HistoryPath(id)} {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (s *Store) Reload() error {
@@ -138,7 +144,7 @@ func (s *Store) Sync() error {
 	var errs []error
 
 	for _, record := range s.Records {
-		if err := s.sync(record); err != nil {
+		if err := s.SyncRecord(record); err != nil {
 			errs = append(errs, fmt.Errorf("«%s»: %w", record.Name, err))
 		}
 	}
@@ -146,7 +152,7 @@ func (s *Store) Sync() error {
 	return errors.Join(errs...)
 }
 
-func (s *Store) sync(record Record) error {
+func (s *Store) SyncRecord(record Record) error {
 	copyPath := s.CopyPath(record.ID)
 
 	if exists(record.Transcript) {
@@ -203,6 +209,24 @@ func (s *Store) file() string {
 }
 
 func (s *Store) modify(change func([]Record) ([]Record, error)) error {
+	if err := os.MkdirAll(s.Dir, 0o700); err != nil {
+		return err
+	}
+
+	lock, err := os.OpenFile(filepath.Join(s.Dir, "starred.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+
+	if err != nil {
+		return err
+	}
+
+	defer lock.Close()
+
+	if err := lockFile(lock); err != nil {
+		return err
+	}
+
+	defer func() { _ = unlockFile(lock) }()
+
 	records, err := s.read()
 
 	if err != nil {
