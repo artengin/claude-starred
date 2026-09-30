@@ -92,13 +92,13 @@ func TestProjectRootGroupsWorktreesAndSubdirectories(t *testing.T) {
 		}
 	}
 
-	os.MkdirAll(filepath.Join(repository, "src"), 0o700)
+	must(t, os.MkdirAll(filepath.Join(repository, "src"), 0o700))
 	git("init", "-q", repository)
 	git("-C", repository, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")
 	git("-C", repository, "worktree", "add", "-q", worktree)
 
 	for _, cwd := range []string{repository, filepath.Join(repository, "src"), worktree} {
-		if root := ProjectRoot(cwd); root != repository {
+		if root := ProjectRoot(cwd); !sameDir(root, repository) {
 			t.Errorf("ProjectRoot(%s) = %s", cwd, root)
 		}
 	}
@@ -111,9 +111,29 @@ func TestProjectRootGroupsWorktreesAndSubdirectories(t *testing.T) {
 	checkout := filepath.Join(dir, "app", "main")
 	git("clone", "-q", "--bare", repository, bare)
 	git("-C", bare, "worktree", "add", "-q", checkout)
-	os.MkdirAll(filepath.Join(checkout, "src"), 0o700)
+	must(t, os.MkdirAll(filepath.Join(checkout, "src"), 0o700))
 
-	if root := ProjectRoot(filepath.Join(checkout, "src")); root != checkout {
+	if root := ProjectRoot(filepath.Join(checkout, "src")); !sameDir(root, checkout) {
 		t.Errorf("subdirectory of a bare-repo worktree should map to the worktree, got %s", root)
+	}
+}
+
+func sameDir(a, b string) bool {
+	first, err := os.Stat(a)
+
+	if err != nil {
+		return false
+	}
+
+	second, err := os.Stat(b)
+
+	return err == nil && os.SameFile(first, second)
+}
+
+func must(t *testing.T, err error) {
+	t.Helper()
+
+	if err != nil {
+		t.Fatal(err)
 	}
 }

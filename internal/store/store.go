@@ -130,17 +130,36 @@ func (s *Store) Reload() error {
 	return nil
 }
 
-func (s *Store) Sync() {
-	for _, record := range s.Records {
-		copyPath := s.CopyPath(record.ID)
+func (s *Store) Sync() error {
+	var errs []error
 
-		if exists(record.Transcript) {
-			keepCopy(record.Transcript, copyPath)
-		} else if exists(copyPath) && keepCopy(copyPath, record.Transcript) == nil {
-			now := time.Now()
-			os.Chtimes(record.Transcript, now, now)
+	for _, record := range s.Records {
+		if err := s.sync(record); err != nil {
+			errs = append(errs, fmt.Errorf("«%s»: %w", record.Name, err))
 		}
 	}
+
+	return errors.Join(errs...)
+}
+
+func (s *Store) sync(record Record) error {
+	copyPath := s.CopyPath(record.ID)
+
+	if exists(record.Transcript) {
+		return keepCopy(record.Transcript, copyPath)
+	}
+
+	if !exists(copyPath) {
+		return nil
+	}
+
+	if err := keepCopy(copyPath, record.Transcript); err != nil {
+		return err
+	}
+
+	now := time.Now()
+
+	return os.Chtimes(record.Transcript, now, now)
 }
 
 func (s *Store) Lost(id string) bool {

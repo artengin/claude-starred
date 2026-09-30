@@ -35,10 +35,10 @@ func newModel(t *testing.T) (*Model, *store.Store) {
 
 	for _, session := range sessions {
 		transcript := filepath.Join(dir, "claude", "projects", "-x", session.id+".jsonl")
-		os.MkdirAll(filepath.Dir(transcript), 0o700)
-		os.WriteFile(transcript, []byte("{}\n"), 0o600)
+		must(t, os.MkdirAll(filepath.Dir(transcript), 0o700))
+		must(t, os.WriteFile(transcript, []byte("{}\n"), 0o600))
 		modified := now.Add(-session.age)
-		os.Chtimes(transcript, modified, modified)
+		must(t, os.Chtimes(transcript, modified, modified))
 
 		if err := s.Star(store.Record{ID: session.id, Name: session.name, Cwd: session.cwd, Project: session.project, Transcript: transcript}); err != nil {
 			t.Fatal(err)
@@ -149,8 +149,8 @@ func TestEnterOnSessionSelectsIt(t *testing.T) {
 func TestEnterOnLiveSessionAsksForConfirmation(t *testing.T) {
 	m, _ := newModel(t)
 	sessions := filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), "sessions")
-	os.MkdirAll(sessions, 0o700)
-	os.WriteFile(filepath.Join(sessions, "1.json"), []byte(fmt.Sprintf(`{"pid":%d,"sessionId":"c"}`, os.Getpid())), 0o600)
+	must(t, os.MkdirAll(sessions, 0o700))
+	must(t, os.WriteFile(filepath.Join(sessions, "1.json"), []byte(fmt.Sprintf(`{"pid":%d,"sessionId":"c"}`, os.Getpid())), 0o600))
 	m.reload()
 	press(m, "enter", "enter")
 
@@ -211,5 +211,13 @@ func TestKeysArrivingTogetherAreHandledOneByOne(t *testing.T) {
 
 	if m.mode != searching || m.query[projectsLevel] != "sh" {
 		t.Fatalf("mode %v, query %q", m.mode, m.query[projectsLevel])
+	}
+}
+
+func must(t *testing.T, err error) {
+	t.Helper()
+
+	if err != nil {
+		t.Fatal(err)
 	}
 }

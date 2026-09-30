@@ -38,8 +38,8 @@ func TestInstallAndRemoveSkill(t *testing.T) {
 func TestForeignSkillIsNotTouched(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
 	path := filepath.Join(SkillDir(), "SKILL.md")
-	os.MkdirAll(SkillDir(), 0o755)
-	os.WriteFile(path, []byte("someone else's star skill"), 0o644)
+	must(t, os.MkdirAll(SkillDir(), 0o755))
+	must(t, os.WriteFile(path, []byte("someone else's star skill"), 0o644))
 
 	if err := InstallSkill("/opt/bin/starred"); err == nil {
 		t.Fatal("expected an error for a foreign skill")
@@ -79,5 +79,13 @@ func TestShellQuote(t *testing.T) {
 		if quoted := shellQuote(path); quoted != expected {
 			t.Errorf("shellQuote(%q) = %s", path, quoted)
 		}
+	}
+}
+
+func must(t *testing.T, err error) {
+	t.Helper()
+
+	if err != nil {
+		t.Fatal(err)
 	}
 }

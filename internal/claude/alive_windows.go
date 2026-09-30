@@ -17,7 +17,7 @@ func processAlive(pid int) bool {
 		return false
 	}
 
-	defer windows.CloseHandle(handle)
+	defer func() { _ = windows.CloseHandle(handle) }()
 
 	var code uint32
 

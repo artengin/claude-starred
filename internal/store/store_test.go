@@ -3,6 +3,7 @@ package store
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -90,14 +91,14 @@ func TestStarAgainOnlyUpdatesName(t *testing.T) {
 func TestSyncRestoresTranscriptDeletedByClaude(t *testing.T) {
 	s, transcript := starred(t)
 	old := time.Now().Add(-40 * 24 * time.Hour)
-	os.Chtimes(transcript, old, old)
-	os.Remove(transcript)
+	must(t, os.Chtimes(transcript, old, old))
+	must(t, os.Remove(transcript))
 
 	if !s.OnlyCopy("abc") {
 		t.Fatal("expected the copy to be the only one left")
 	}
 
-	s.Sync()
+	must(t, s.Sync())
 
 	if !sameFile(t, transcript, s.CopyPath("abc")) {
 		t.Fatal("transcript was not restored from the copy")
@@ -112,13 +113,24 @@ func TestSyncRestoresTranscriptDeletedByClaude(t *testing.T) {
 
 func TestSyncRelinksRewrittenTranscript(t *testing.T) {
 	s, transcript := starred(t)
-	os.Remove(transcript)
-	os.WriteFile(transcript, []byte(`{"type":"user","cwd":"/work"}`+"\n{}\n"), 0o600)
+	must(t, os.Remove(transcript))
+	must(t, os.WriteFile(transcript, []byte(`{"type":"user","cwd":"/work"}`+"\n{}\n"), 0o600))
 
-	s.Sync()
+	must(t, s.Sync())
 
 	if !sameFile(t, transcript, s.CopyPath("abc")) {
 		t.Fatal("copy does not follow the rewritten transcript")
+	}
+}
+
+func TestSyncReportsFailedCopy(t *testing.T) {
+	s, _ := starred(t)
+	copies := filepath.Dir(s.CopyPath("abc"))
+	must(t, os.RemoveAll(copies))
+	must(t, os.WriteFile(copies, nil, 0o600))
+
+	if err := s.Sync(); err == nil || !strings.Contains(err.Error(), "First") {
+		t.Fatalf("expected a sync error naming the session, got %v", err)
 	}
 }
 
@@ -144,8 +156,8 @@ func TestUnstarRemovesRecordAndCopy(t *testing.T) {
 
 func TestLostWhenBothFilesAreGone(t *testing.T) {
 	s, transcript := starred(t)
-	os.Remove(transcript)
-	os.Remove(s.CopyPath("abc"))
+	must(t, os.Remove(transcript))
+	must(t, os.Remove(s.CopyPath("abc")))
 
 	if !s.Lost("abc") {
 		t.Fatal("expected the session to be lost")
@@ -156,7 +168,7 @@ func TestChangesFromAnotherProcessAreNotLost(t *testing.T) {
 	s, transcript := starred(t)
 	other, _ := Open(s.Dir)
 	second := filepath.Join(filepath.Dir(transcript), "def.jsonl")
-	os.WriteFile(second, []byte("{}\n"), 0o600)
+	must(t, os.WriteFile(second, []byte("{}\n"), 0o600))
 
 	if err := other.Star(Record{ID: "def", Name: "Other", Transcript: second}); err != nil {
 		t.Fatal(err)
@@ -176,7 +188,7 @@ func TestChangesFromAnotherProcessAreNotLost(t *testing.T) {
 func TestStarAgainRefreshesLocation(t *testing.T) {
 	s, _ := starred(t)
 	moved := filepath.Join(t.TempDir(), "abc.jsonl")
-	os.WriteFile(moved, []byte("{}\n"), 0o600)
+	must(t, os.WriteFile(moved, []byte("{}\n"), 0o600))
 
 	if err := s.Star(Record{ID: "abc", Name: "First", Cwd: "/moved", Project: "/moved", Transcript: moved}); err != nil {
 		t.Fatal(err)
@@ -189,9 +201,17 @@ func TestStarAgainRefreshesLocation(t *testing.T) {
 
 func TestCorruptedListIsReported(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "starred.json"), []byte("{broken"), 0o600)
+	must(t, os.WriteFile(filepath.Join(dir, "starred.json"), []byte("{broken"), 0o600))
 
 	if _, err := Open(dir); err == nil {
 		t.Fatal("expected an error for a corrupted list")
+	}
+}
+
+func must(t *testing.T, err error) {
+	t.Helper()
+
+	if err != nil {
+		t.Fatal(err)
 	}
 }
