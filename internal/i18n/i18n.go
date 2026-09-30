@@ -35,7 +35,7 @@ var english = map[string]string{
 	"moved_from":      "%s is gone, opening from %s",
 	"star_done":       "Starred «%s».",
 	"no_transcript":   "session %s has no saved messages yet: send any message in it, then run /star again",
-	"star_snapshot":   "Hard link failed, so the kept copy is a snapshot; it is refreshed each time you open `starred`.",
+	"star_snapshot":   "Hard link failed, so the kept copy is a snapshot; it is refreshed each time you open `claude-starred`.",
 	"star_status_no":  "not starred",
 	"star_status_yes": "starred",
 }
@@ -69,7 +69,7 @@ var russian = map[string]string{
 	"moved_from":      "Каталога %s больше нет, открываю из %s",
 	"star_done":       "«%s» в избранном.",
 	"no_transcript":   "в сессии %s ещё нет сохранённых сообщений: отправьте в ней любое сообщение и снова запустите /star",
-	"star_snapshot":   "Hard link не создался, копия сохранена снимком и обновляется при каждом открытии `starred`.",
+	"star_snapshot":   "Hard link не создался, копия сохранена снимком и обновляется при каждом открытии `claude-starred`.",
 	"star_status_no":  "не в избранном",
 	"star_status_yes": "в избранном",
 }

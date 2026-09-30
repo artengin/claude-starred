@@ -224,8 +224,8 @@ func archiveExtension() string {
 
 func binaryName() string {
 	if runtime.GOOS == "windows" {
-		return "starred.exe"
+		return "claude-starred.exe"
 	}
 
-	return "starred"
+	return "claude-starred"
 }

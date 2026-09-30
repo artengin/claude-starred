@@ -7,7 +7,7 @@ Bookmarks for your Claude Code sessions.
 
 Star the sessions worth coming back to with `/star`, then find and reopen them from one small tree in your terminal. Starred sessions survive Claude Code's automatic cleanup.
 <p align="center">
-  <img src="demo/demo.gif" alt="starred demo" width="650px">
+  <img src="demo/demo.gif" alt="claude-starred demo" width="650px">
 </p>
 
 ## Why
@@ -15,7 +15,7 @@ Star the sessions worth coming back to with `/star`, then find and reopen them f
 - **Good sessions get lost.** After a few weeks there are dozens of sessions across projects, and the one with the right context is hard to find.
 - **Old sessions disappear.** Claude Code deletes sessions after 30 days by default, including the ones you meant to come back to.
 
-`starred` keeps only the sessions you chose, under names you gave them, grouped by project, for as long as you need them.
+`claude-starred` keeps only the sessions you chose, under names you gave them, grouped by project, for as long as you need them.
 
 ## Features
 
@@ -34,7 +34,7 @@ Star the sessions worth coming back to with `/star`, then find and reopen them f
    curl -fsSL https://raw.githubusercontent.com/artengin/claude-starred/main/install.sh | sh
    ```
 
-   This installs `starred` into `~/.local/bin` and the `/star` skill into Claude Code.
+   This installs `claude-starred` into `~/.local/bin` and the `/star` skill into Claude Code.
 
 2. In a Claude Code session you want to keep, run:
 
@@ -47,18 +47,18 @@ Star the sessions worth coming back to with `/star`, then find and reopen them f
 3. Later, in any terminal:
 
    ```sh
-   starred
+   claude-starred
    ```
 
-**Windows:** download `claude-starred_windows_amd64.zip` from [releases](https://github.com/artengin/claude-starred/releases), put `starred.exe` on your `PATH` and run `starred install`.
+**Windows:** download `claude-starred_windows_amd64.zip` from [releases](https://github.com/artengin/claude-starred/releases), put `claude-starred.exe` on your `PATH` and run `claude-starred install`.
 
-**With Go:** `go install github.com/artengin/claude-starred/cmd/starred@latest && starred install`.
+**With Go:** `go install github.com/artengin/claude-starred/cmd/claude-starred@latest && claude-starred install`.
 
 ## Update and uninstall
 
 ```sh
-starred update
-starred uninstall
+claude-starred update
+claude-starred uninstall
 ```
 
 `update` replaces the binary and refreshes the `/star` skill. `uninstall` removes the `/star` skill, the starred list with its kept copies, and the binary. If Claude has already deleted some starred sessions, you are warned that they will be lost.
@@ -81,11 +81,11 @@ starred uninstall
 
 ## Good to know
 
-- Claude Code deletes old sessions after `cleanupPeriodDays`. Starred sessions are kept: `starred` brings them back, so `claude --resume` keeps working. Subagent history and file checkpoints of old sessions are still removed by Claude.
-- The kept copy is a hard link of the transcript, so it always matches. When a hard link is impossible (the data directory is on another filesystem), `/star` warns that the copy is a snapshot; it is refreshed every time you open `starred`.
-- `starred` never changes Claude Code's settings or transcripts. Names are stored separately, so they don't show up in Claude's `/resume`.
+- Claude Code deletes old sessions after `cleanupPeriodDays`. Starred sessions are kept: `claude-starred` brings them back, so `claude --resume` keeps working. Subagent history and file checkpoints of old sessions are still removed by Claude.
+- The kept copy is a hard link of the transcript, so it always matches. When a hard link is impossible (the data directory is on another filesystem), `/star` warns that the copy is a snapshot; it is refreshed every time you open `claude-starred`.
+- `claude-starred` never changes Claude Code's settings or transcripts. Names are stored separately, so they don't show up in Claude's `/resume`.
 - The interface language follows `LANG`.
-- Claude Code's session format is undocumented, so a Claude Code update may break `starred`.
+- Claude Code's session format is undocumented, so a Claude Code update may break `claude-starred`.
 
 ## License
 
