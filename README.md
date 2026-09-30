@@ -6,33 +6,16 @@
 Bookmarks for your Claude Code sessions.
 
 Star the sessions worth coming back to with `/star`, then find and reopen them from one small tree in your terminal. Starred sessions survive Claude Code's automatic cleanup.
-
-```
- ★ Starred
- ──────────────────────────────────────
-
- > api-server
-   my-app
-   web-client
-```
-
-`Enter` opens a project:
-
-```
- ★ my-app
- ──────────────────────────────────────
-
- > ● Checkout flow redesign
-   ○ Payment retries
-   ○ Price migration
-```
+<p align="center">
+  <img src="demo/demo.gif" alt="starred demo" width="650px">
+</p>
 
 ## Why
 
 - **Good sessions get lost.** After a few weeks there are dozens of sessions across projects, and the one with the right context is hard to find.
 - **Old sessions disappear.** Claude Code deletes sessions after 30 days by default, including the ones you meant to come back to.
 
-`starred` keeps only the sessions you chose, under names you gave them, for as long as you need them.
+`starred` keeps only the sessions you chose, under names you gave them, grouped by project, for as long as you need them.
 
 ## Features
 
@@ -85,7 +68,7 @@ Star the sessions worth coming back to with `/star`, then find and reopen them f
 | `?` | help |
 | `q` | quit |
 
-`●` marks a session that is running right now, `○` one that is not. Opening a running session asks for confirmation, because two Claude processes on one session write to the same transcript.
+`●` marks a session that is running right now and ○ one that is not; the list refreshes on its own. Opening a running session asks for confirmation, because two Claude processes on one session would write to the same transcript.
 
 ## Good to know
 
