@@ -3,6 +3,7 @@ package tui
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -92,7 +93,8 @@ type Model struct {
 	root      string
 	cursor    [2]int
 	mode      mode
-	input     string
+	input     []rune
+	caret     int
 	showPaths bool
 	message   string
 	failure   string
@@ -191,7 +193,7 @@ func (m *Model) browse(key tea.KeyMsg) tea.Cmd {
 		m.back()
 	case "r":
 		if session := m.selectedSession(); session != nil {
-			m.mode, m.input = renaming, session.Name
+			m.startRename(*session)
 		}
 	case "d":
 		if m.selectedSession() != nil {
@@ -210,6 +212,12 @@ func (m *Model) browse(key tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
+func (m *Model) startRename(session Session) {
+	m.mode = renaming
+	m.input = []rune(session.Name)
+	m.caret = len(m.input)
+}
+
 func (m *Model) editInput(key tea.KeyMsg, done func()) {
 	switch key.Type {
 	case tea.KeyEnter:
@@ -217,22 +225,64 @@ func (m *Model) editInput(key tea.KeyMsg, done func()) {
 		m.mode = browsing
 	case tea.KeyEsc:
 		m.mode = browsing
+	case tea.KeyLeft:
+		m.caret = max(m.caret-1, 0)
+	case tea.KeyRight:
+		m.caret = min(m.caret+1, len(m.input))
+	case tea.KeyHome, tea.KeyCtrlA:
+		m.caret = 0
+	case tea.KeyEnd, tea.KeyCtrlE:
+		m.caret = len(m.input)
 	case tea.KeyBackspace:
-		runes := []rune(m.input)
-
-		if len(runes) > 0 {
-			m.input = string(runes[:len(runes)-1])
+		if m.caret > 0 {
+			m.input = slices.Delete(m.input, m.caret-1, m.caret)
+			m.caret--
+		}
+	case tea.KeyDelete:
+		if m.caret < len(m.input) {
+			m.input = slices.Delete(m.input, m.caret, m.caret+1)
 		}
 	case tea.KeyCtrlU:
-		m.input = ""
+		m.input, m.caret = nil, 0
 	case tea.KeyRunes, tea.KeySpace:
-		m.input += string(key.Runes)
+		m.input = slices.Insert(m.input, m.caret, key.Runes...)
+		m.caret += len(key.Runes)
 	}
+}
+
+func (m *Model) inputView(width int) string {
+	width = max(width-1, 0)
+	head, tail := string(m.input[:m.caret]), string(m.input[m.caret:])
+	tailWidth := min(runewidth.StringWidth(tail), max(width-runewidth.StringWidth(head), width/3, visibleNext(m.input[m.caret:])))
+
+	if headWidth := width - tailWidth; headWidth > 0 {
+		head = fitStart(head, headWidth)
+	} else {
+		head = ""
+	}
+
+	if tailWidth < runewidth.StringWidth(tail) {
+		tail = fitEnd(tail, tailWidth)
+	}
+
+	return head + "█" + tail
+}
+
+func visibleNext(tail []rune) int {
+	if len(tail) == 0 {
+		return 0
+	}
+
+	if len(tail) == 1 {
+		return runewidth.RuneWidth(tail[0])
+	}
+
+	return runewidth.RuneWidth(tail[0]) + 1
 }
 
 func (m *Model) finishRename() {
 	session := m.selectedSession()
-	name := strings.TrimSpace(m.input)
+	name := strings.TrimSpace(string(m.input))
 
 	if session == nil || name == "" || name == session.Name {
 		return
@@ -590,6 +640,16 @@ func (m *Model) renderRow(r row, selected bool) string {
 func (m *Model) footer() string {
 	width := m.lineWidth() - 2
 
+	if m.mode == renaming {
+		prompt := i18n.T("prompt_rename")
+
+		if runewidth.StringWidth(prompt)+4 > width {
+			prompt = ""
+		}
+
+		return " " + prompt + m.inputView(width-runewidth.StringWidth(prompt))
+	}
+
 	if text := m.footerText(); text != "" {
 		return " " + fitEnd(text, width)
 	}
@@ -599,8 +659,6 @@ func (m *Model) footer() string {
 
 func (m *Model) footerText() string {
 	switch m.mode {
-	case renaming:
-		return i18n.T("prompt_rename") + m.input + "█"
 	case confirming, confirmingLive:
 		if session := m.selectedSession(); session != nil {
 			return m.confirmation(*session)

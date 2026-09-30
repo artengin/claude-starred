@@ -11,6 +11,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 	"github.com/muesli/termenv"
 
 	"github.com/artengin/claude-starred/internal/store"
@@ -64,6 +65,20 @@ func press(m *Model, keys ...string) {
 			msg = tea.KeyMsg{Type: tea.KeyBackspace}
 		case "ctrl+u":
 			msg = tea.KeyMsg{Type: tea.KeyCtrlU}
+		case "left":
+			msg = tea.KeyMsg{Type: tea.KeyLeft}
+		case "right":
+			msg = tea.KeyMsg{Type: tea.KeyRight}
+		case "home":
+			msg = tea.KeyMsg{Type: tea.KeyHome}
+		case "end":
+			msg = tea.KeyMsg{Type: tea.KeyEnd}
+		case "ctrl+a":
+			msg = tea.KeyMsg{Type: tea.KeyCtrlA}
+		case "ctrl+e":
+			msg = tea.KeyMsg{Type: tea.KeyCtrlE}
+		case "delete":
+			msg = tea.KeyMsg{Type: tea.KeyDelete}
 		default:
 			msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}
 		}
@@ -316,6 +331,93 @@ func TestRenameAcceptsRunesArrivingTogether(t *testing.T) {
 
 	if session := m.selectedSession(); session == nil || session.Name != "Pay" {
 		t.Fatalf("expected the renamed session under the cursor: %+v", session)
+	}
+}
+
+func TestRenameInsertsAtCursor(t *testing.T) {
+	m, s := newModel(t)
+	press(m, "j", "enter", "r", "left", "left", "X", "enter")
+
+	if s.Find("a").Name != "Checkout flXow" {
+		t.Fatalf("rename failed: %+v", s.Find("a"))
+	}
+}
+
+func TestRenameEditsAroundCursor(t *testing.T) {
+	m, s := newModel(t)
+	press(m, "j", "enter", "r", "home", "delete", "c", "right", "backspace", "H", "end", "backspace", "W")
+
+	if s.Find("a").Name != "Checkout flow" {
+		t.Fatalf("unexpected name before enter: %+v", s.Find("a"))
+	}
+
+	press(m, "enter")
+
+	if s.Find("a").Name != "cHeckout floW" {
+		t.Fatalf("rename failed: %+v", s.Find("a"))
+	}
+}
+
+func TestRenameShowsCursorInFooter(t *testing.T) {
+	m, s := newModel(t)
+	press(m, "j", "enter", "r", "home", "right")
+
+	if footer := m.footer(); footer != " Name: C█heckout flow" {
+		t.Fatalf("unexpected footer %q", footer)
+	}
+
+	press(m, "esc")
+
+	if s.Find("a").Name != "Checkout flow" || m.mode != browsing {
+		t.Fatal("esc must cancel the rename")
+	}
+}
+
+func TestCtrlUClearsTheWholeName(t *testing.T) {
+	m, s := newModel(t)
+	press(m, "j", "enter", "r", "left", "left", "ctrl+u", "N", "e", "w", "enter")
+
+	if s.Find("a").Name != "New" {
+		t.Fatalf("ctrl+u must clear the whole name: %+v", s.Find("a"))
+	}
+}
+
+func TestRenameFooterFitsTheWindowAndKeepsTheCursorVisible(t *testing.T) {
+	m, _ := newModel(t)
+	press(m, "j", "enter", "r", "home", "right", "right")
+
+	for _, width := range []int{5, 8, 12, 16, 80} {
+		m.Update(tea.WindowSizeMsg{Width: width, Height: 20})
+		footer := m.footer()
+
+		if runewidth.StringWidth(footer) > width-1 {
+			t.Errorf("width %d: footer %q is %d cells wide", width, footer, runewidth.StringWidth(footer))
+		}
+
+		if !strings.Contains(footer, "█e") {
+			t.Errorf("width %d: the cursor or the character under it is hidden in %q", width, footer)
+		}
+	}
+}
+
+func TestWideCharacterUnderTheCursorStaysVisible(t *testing.T) {
+	m, _ := newModel(t)
+	press(m, "j", "enter", "r", "ctrl+u")
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("日本語のセッション名")})
+	press(m, "home", "right")
+	m.Update(tea.WindowSizeMsg{Width: 12, Height: 20})
+
+	if footer := m.footer(); !strings.Contains(footer, "█本") {
+		t.Fatalf("the wide character under the cursor is hidden in %q", footer)
+	}
+}
+
+func TestRenameCursorStopsAtTheEdges(t *testing.T) {
+	m, s := newModel(t)
+	press(m, "j", "enter", "r", "ctrl+a", "backspace", "left", "X", "ctrl+e", "delete", "right", "Y", "enter")
+
+	if s.Find("a").Name != "XCheckout flowY" {
+		t.Fatalf("unexpected name %q", s.Find("a").Name)
 	}
 }
 
