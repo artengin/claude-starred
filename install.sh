@@ -32,10 +32,10 @@ if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
   exit 1
 fi
 
-tar -xzf "$temporary/$archive" -C "$temporary" starred
+tar -xzf "$temporary/$archive" -C "$temporary" claude-starred
 mkdir -p "$bin_dir"
-mv "$temporary/starred" "$bin_dir/starred"
-"$bin_dir/starred" install
+mv "$temporary/claude-starred" "$bin_dir/claude-starred"
+"$bin_dir/claude-starred" install
 
 case ":$PATH:" in
   *":$bin_dir:"*) ;;

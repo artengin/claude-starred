@@ -10,7 +10,7 @@ import (
 func TestInstallAndRemoveSkill(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
 
-	if err := InstallSkill("/opt/bin/starred"); err != nil {
+	if err := InstallSkill("/opt/bin/claude-starred"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -20,7 +20,7 @@ func TestInstallAndRemoveSkill(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, expected := range []string{"name: star", "Bash('/opt/bin/starred' info:*), Bash('/opt/bin/starred' star:*)", "`'/opt/bin/starred' info ${CLAUDE_SESSION_ID}`", "<<'STARRED_NAME'"} {
+	for _, expected := range []string{"name: star", "Bash('/opt/bin/claude-starred' info:*), Bash('/opt/bin/claude-starred' star:*)", "`'/opt/bin/claude-starred' info ${CLAUDE_SESSION_ID}`", "<<'STARRED_NAME'"} {
 		if !strings.Contains(string(data), expected) {
 			t.Errorf("skill does not contain %q", expected)
 		}
@@ -41,7 +41,7 @@ func TestForeignSkillIsNotTouched(t *testing.T) {
 	must(t, os.MkdirAll(SkillDir(), 0o755))
 	must(t, os.WriteFile(path, []byte("someone else's star skill"), 0o644))
 
-	if err := InstallSkill("/opt/bin/starred"); err == nil {
+	if err := InstallSkill("/opt/bin/claude-starred"); err == nil {
 		t.Fatal("expected an error for a foreign skill")
 	}
 
@@ -84,20 +84,20 @@ func TestSkillUsesTheBareNameWhenTheBinaryIsOnPath(t *testing.T) {
 		t.Fatalf("expected the bare name, got %s", command)
 	}
 
-	if _, err := skillCommand("/opt/tools (x86)/starred"); err == nil {
+	if _, err := skillCommand("/opt/tools (x86)/claude-starred"); err == nil {
 		t.Fatal("a path with parentheses must be rejected when it is not on PATH")
 	}
 
-	if command, err := skillCommand(filepath.Join(t.TempDir(), "bin", "starred")); err != nil || !strings.HasPrefix(command, "'") {
+	if command, err := skillCommand(filepath.Join(t.TempDir(), "bin", "claude-starred")); err != nil || !strings.HasPrefix(command, "'") {
 		t.Fatalf("a plain path off PATH must be quoted, got %q, %v", command, err)
 	}
 }
 
 func TestShellQuote(t *testing.T) {
 	for path, expected := range map[string]string{
-		"/opt/bin/starred":         "'/opt/bin/starred'",
-		"/home/my user/starred":    "'/home/my user/starred'",
-		"/home/o'neil/bin/starred": `'/home/o'\''neil/bin/starred'`,
+		"/opt/bin/claude-starred":         "'/opt/bin/claude-starred'",
+		"/home/my user/claude-starred":    "'/home/my user/claude-starred'",
+		"/home/o'neil/bin/claude-starred": `'/home/o'\''neil/bin/claude-starred'`,
 	} {
 		if quoted := shellQuote(path); quoted != expected {
 			t.Errorf("shellQuote(%q) = %s", path, quoted)

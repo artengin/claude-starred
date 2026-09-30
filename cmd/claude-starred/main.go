@@ -22,21 +22,21 @@ import (
 
 var version = "dev"
 
-const usage = `starred - starred Claude Code sessions
+const usage = `claude-starred - starred Claude Code sessions
 
 Usage:
-  starred                      browse starred sessions
-  starred star <id> [--name N] star a session (used by the /star skill)
-  starred info <id>            show the star state of a session
-  starred install              install the /star skill into Claude Code
-  starred uninstall            remove the skill, starred data and this binary
-  starred update               update to the latest release
-  starred version              print the version
+  claude-starred                      browse starred sessions
+  claude-starred star <id> [--name N] star a session (used by the /star skill)
+  claude-starred info <id>            show the star state of a session
+  claude-starred install              install the /star skill into Claude Code
+  claude-starred uninstall            remove the skill, starred data and this binary
+  claude-starred update               update to the latest release
+  claude-starred version              print the version
 `
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "starred:", err)
+		fmt.Fprintln(os.Stderr, "claude-starred:", err)
 		os.Exit(1)
 	}
 }
@@ -121,7 +121,7 @@ func star(s *store.Store, args []string) error {
 	name := flags.String("name", "", "session name, or - to read it from stdin")
 
 	if len(args) == 0 {
-		return errors.New("usage: starred star <id> [--name N]")
+		return errors.New("usage: claude-starred star <id> [--name N]")
 	}
 
 	if err := flags.Parse(args[1:]); err != nil {
@@ -178,7 +178,7 @@ func star(s *store.Store, args []string) error {
 
 func info(s *store.Store, args []string) error {
 	if len(args) != 1 {
-		return errors.New("usage: starred info <id>")
+		return errors.New("usage: claude-starred info <id>")
 	}
 
 	var transcript claude.Transcript
@@ -224,7 +224,7 @@ func install() error {
 		return err
 	}
 
-	fmt.Printf("Installed the /star skill: %s\nRun `starred` to browse starred sessions.\n", setup.SkillDir())
+	fmt.Printf("Installed the /star skill: %s\nRun `claude-starred` to browse starred sessions.\n", setup.SkillDir())
 
 	return nil
 }
@@ -298,11 +298,11 @@ func update() error {
 
 	if updated && setup.SkillInstalled() {
 		if output, err := exec.Command(executable, "install").CombinedOutput(); err != nil {
-			return fmt.Errorf("binary updated to %s, but the /star skill was not refreshed (%w: %s); run `starred install`", tag, err, output)
+			return fmt.Errorf("binary updated to %s, but the /star skill was not refreshed (%w: %s); run `claude-starred install`", tag, err, output)
 		}
 	}
 
-	fmt.Println("starred", tag)
+	fmt.Println("claude-starred", tag)
 
 	return nil
 }

@@ -1,8 +1,8 @@
 version: 2
 
 builds:
-  - main: ./cmd/starred
-    binary: starred
+  - main: ./cmd/claude-starred
+    binary: claude-starred
     env:
       - CGO_ENABLED=0
     goos: [linux, darwin, windows]
