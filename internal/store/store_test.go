@@ -123,6 +123,119 @@ func TestSyncRelinksRewrittenTranscript(t *testing.T) {
 	}
 }
 
+func TestRecreatedTranscriptIsNotRewrittenAndHistoryIsKept(t *testing.T) {
+	s, transcript := starred(t)
+	must(t, os.Remove(transcript))
+	must(t, os.WriteFile(transcript, []byte(`{"type":"user","message":"after"}`+"\n"), 0o600))
+
+	must(t, s.Sync())
+
+	data, err := os.ReadFile(transcript)
+	must(t, err)
+
+	if string(data) != `{"type":"user","message":"after"}`+"\n" {
+		t.Fatalf("the live transcript must not be rewritten:\n%s", data)
+	}
+
+	history, err := os.ReadFile(s.HistoryPath("abc"))
+	must(t, err)
+
+	if string(history) != `{"type":"user","cwd":"/work"}`+"\n" {
+		t.Fatalf("history before the deletion was not kept:\n%s", history)
+	}
+
+	if !sameFile(t, transcript, s.CopyPath("abc")) {
+		t.Fatal("copy does not follow the recreated transcript")
+	}
+}
+
+func TestSyncRestoresHistoryInFrontOfTheCopy(t *testing.T) {
+	s, transcript := starred(t)
+	must(t, os.Remove(transcript))
+	must(t, os.WriteFile(transcript, []byte(`{"type":"user","message":"after"}`+"\n"), 0o600))
+	must(t, s.Sync())
+	must(t, os.Remove(transcript))
+
+	must(t, s.Sync())
+
+	data, err := os.ReadFile(transcript)
+	must(t, err)
+
+	if expected := `{"type":"user","cwd":"/work"}` + "\n" + `{"type":"user","message":"after"}` + "\n"; string(data) != expected {
+		t.Fatalf("restored transcript lost part of the history:\n%s", data)
+	}
+
+	if exists(s.HistoryPath("abc")) {
+		t.Fatal("history must be folded into the copy after a restore")
+	}
+
+	if !sameFile(t, transcript, s.CopyPath("abc")) {
+		t.Fatal("restored transcript is not linked to the copy")
+	}
+}
+
+func TestSecondRecreationAppendsToHistory(t *testing.T) {
+	s, transcript := starred(t)
+
+	for _, message := range []string{"second", "third"} {
+		must(t, os.Remove(transcript))
+		must(t, os.WriteFile(transcript, []byte(`{"m":"`+message+`"}`+"\n"), 0o600))
+		must(t, s.Sync())
+	}
+
+	history, err := os.ReadFile(s.HistoryPath("abc"))
+	must(t, err)
+
+	if string(history) != `{"type":"user","cwd":"/work"}`+"\n"+`{"m":"second"}`+"\n" {
+		t.Fatalf("history must accumulate every earlier transcript in order:\n%s", history)
+	}
+}
+
+func TestRestoreDoesNotOverwriteATranscriptThatReappeared(t *testing.T) {
+	s, transcript := starred(t)
+	must(t, os.Remove(transcript))
+	must(t, os.WriteFile(transcript, []byte("fresh\n"), 0o600))
+
+	must(t, restore(s.CopyPath("abc"), s.HistoryPath("abc"), transcript))
+
+	data, err := os.ReadFile(transcript)
+	must(t, err)
+
+	if string(data) != "fresh\n" {
+		t.Fatalf("restore must never replace an existing transcript:\n%s", data)
+	}
+}
+
+func TestIncompleteLastLineIsDroppedFromHistory(t *testing.T) {
+	s, transcript := starred(t)
+	must(t, os.WriteFile(transcript, []byte(`{"type":"user","cwd":"/work"}`+"\n"+`{"partial`), 0o600))
+	must(t, s.Sync())
+	must(t, os.Remove(transcript))
+	must(t, os.WriteFile(transcript, []byte("after\n"), 0o600))
+
+	must(t, s.Sync())
+
+	history, err := os.ReadFile(s.HistoryPath("abc"))
+	must(t, err)
+
+	if string(history) != `{"type":"user","cwd":"/work"}`+"\n" {
+		t.Fatalf("a torn last line must not enter the history:\n%s", history)
+	}
+}
+
+func TestUnstarRemovesHistory(t *testing.T) {
+	s, transcript := starred(t)
+	must(t, os.Remove(transcript))
+	must(t, os.WriteFile(transcript, []byte("after\n"), 0o600))
+	must(t, s.Sync())
+
+	must(t, s.Unstar("abc"))
+
+	if exists(s.HistoryPath("abc")) {
+		t.Fatal("history left after unstar")
+	}
+}
+
 func TestSyncReportsFailedCopy(t *testing.T) {
 	s, _ := starred(t)
 	copies := filepath.Dir(s.CopyPath("abc"))

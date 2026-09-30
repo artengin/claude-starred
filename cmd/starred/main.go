@@ -137,8 +137,12 @@ func star(s *store.Store, args []string) error {
 
 	transcriptPath, err := claude.FindTranscript(id)
 
+	if errors.Is(err, os.ErrNotExist) {
+		return errors.New(i18n.T("no_transcript", id))
+	}
+
 	if err != nil {
-		return fmt.Errorf("session %s not found", id)
+		return err
 	}
 
 	transcript, err := claude.ReadTranscript(transcriptPath)
@@ -173,16 +177,17 @@ func info(s *store.Store, args []string) error {
 		return errors.New("usage: starred info <id>")
 	}
 
+	var transcript claude.Transcript
 	transcriptPath, err := claude.FindTranscript(args[0])
 
-	if err != nil {
-		return fmt.Errorf("session %s not found", args[0])
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
 
-	transcript, err := claude.ReadTranscript(transcriptPath)
-
-	if err != nil {
-		return err
+	if err == nil {
+		if transcript, err = claude.ReadTranscript(transcriptPath); err != nil {
+			return err
+		}
 	}
 
 	status := i18n.T("star_status_no")

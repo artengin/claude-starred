@@ -1,6 +1,8 @@
 package store
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -66,7 +68,7 @@ func (s *Store) Find(id string) *Record {
 }
 
 func (s *Store) Star(record Record) error {
-	if err := keepCopy(record.Transcript, s.CopyPath(record.ID)); err != nil {
+	if err := keepCopy(record.Transcript, s.CopyPath(record.ID), s.HistoryPath(record.ID)); err != nil {
 		return err
 	}
 
@@ -101,8 +103,10 @@ func (s *Store) Rename(id, name string) error {
 }
 
 func (s *Store) Unstar(id string) error {
-	if err := os.Remove(s.CopyPath(id)); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
+	for _, path := range []string{s.CopyPath(id), s.HistoryPath(id)} {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
 	}
 
 	return s.modify(func(records []Record) ([]Record, error) {
@@ -146,20 +150,14 @@ func (s *Store) sync(record Record) error {
 	copyPath := s.CopyPath(record.ID)
 
 	if exists(record.Transcript) {
-		return keepCopy(record.Transcript, copyPath)
+		return keepCopy(record.Transcript, copyPath, s.HistoryPath(record.ID))
 	}
 
 	if !exists(copyPath) {
 		return nil
 	}
 
-	if err := keepCopy(copyPath, record.Transcript); err != nil {
-		return err
-	}
-
-	now := time.Now()
-
-	return os.Chtimes(record.Transcript, now, now)
+	return restore(copyPath, s.HistoryPath(record.ID), record.Transcript)
 }
 
 func (s *Store) Lost(id string) bool {
@@ -194,6 +192,10 @@ func (s *Store) Snapshot(id string) bool {
 
 func (s *Store) CopyPath(id string) string {
 	return filepath.Join(s.Dir, "transcripts", id+".jsonl")
+}
+
+func (s *Store) HistoryPath(id string) string {
+	return filepath.Join(s.Dir, "transcripts", id+".history.jsonl")
 }
 
 func (s *Store) file() string {
@@ -251,34 +253,42 @@ func (s *Store) write(records []Record) error {
 		return err
 	}
 
-	temporary, err := os.CreateTemp(s.Dir, "starred.json.*.tmp")
+	return writeAndRename(s.file(), func(output io.Writer) error {
+		_, err := output.Write(append(data, '\n'))
+
+		return err
+	})
+}
+
+func writeAndRename(target string, write func(io.Writer) error) error {
+	temporary, err := os.CreateTemp(filepath.Dir(target), filepath.Base(target)+".*.tmp")
 
 	if err != nil {
 		return err
 	}
 
-	if err := writeAndRename(temporary, append(data, '\n'), s.file()); err != nil {
+	err = write(temporary)
+
+	if err == nil {
+		err = temporary.Sync()
+	}
+
+	if closeErr := temporary.Close(); err == nil {
+		err = closeErr
+	}
+
+	if err == nil {
+		err = os.Rename(temporary.Name(), target)
+	}
+
+	if err != nil {
 		os.Remove(temporary.Name())
-		return err
 	}
 
-	return nil
+	return err
 }
 
-func writeAndRename(temporary *os.File, data []byte, target string) error {
-	if _, err := temporary.Write(data); err != nil {
-		temporary.Close()
-		return err
-	}
-
-	if err := temporary.Close(); err != nil {
-		return err
-	}
-
-	return os.Rename(temporary.Name(), target)
-}
-
-func keepCopy(source, target string) error {
+func keepCopy(source, target, history string) error {
 	sourceInfo, err := os.Stat(source)
 
 	if err != nil {
@@ -293,6 +303,18 @@ func keepCopy(source, target string) error {
 		if targetInfo.ModTime().Equal(sourceInfo.ModTime()) && targetInfo.Size() == sourceInfo.Size() {
 			return nil
 		}
+
+		continues, err := startsWith(source, target)
+
+		if err != nil {
+			return err
+		}
+
+		if !continues {
+			if err := archive(target, history); err != nil {
+				return err
+			}
+		}
 	}
 
 	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
@@ -305,10 +327,141 @@ func keepCopy(source, target string) error {
 		return nil
 	}
 
-	return copyFile(source, target, sourceInfo.ModTime())
+	return copyFile(source, target, sourceInfo.ModTime(), false)
 }
 
-func copyFile(source, target string, modTime time.Time) error {
+func restore(copyPath, history, transcript string) error {
+	if exists(history) {
+		if err := writeAndRename(copyPath, func(output io.Writer) error {
+			return concatenate(output, history, copyPath)
+		}); err != nil {
+			return err
+		}
+
+		if err := os.Remove(history); err != nil {
+			return err
+		}
+	}
+
+	if err := os.MkdirAll(filepath.Dir(transcript), 0o700); err != nil {
+		return err
+	}
+
+	err := os.Link(copyPath, transcript)
+
+	if errors.Is(err, os.ErrExist) {
+		return nil
+	}
+
+	if err != nil {
+		if err := copyFile(copyPath, transcript, time.Now(), true); err != nil {
+			if errors.Is(err, os.ErrExist) {
+				return nil
+			}
+
+			return err
+		}
+	}
+
+	now := time.Now()
+
+	return os.Chtimes(transcript, now, now)
+}
+
+func archive(path, history string) error {
+	previous := ""
+
+	if exists(history) {
+		previous = history
+	}
+
+	return writeAndRename(history, func(output io.Writer) error {
+		return concatenate(output, previous, path)
+	})
+}
+
+func concatenate(output io.Writer, paths ...string) error {
+	for _, path := range paths {
+		if path == "" {
+			continue
+		}
+
+		data, err := os.ReadFile(path)
+
+		if err != nil {
+			return err
+		}
+
+		if cut := bytes.LastIndexByte(data, '\n'); cut >= 0 {
+			data = data[:cut+1]
+		} else {
+			continue
+		}
+
+		if _, err := output.Write(data); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func startsWith(path, prefixPath string) (bool, error) {
+	info, err := os.Stat(path)
+
+	if err != nil {
+		return false, err
+	}
+
+	prefixInfo, err := os.Stat(prefixPath)
+
+	if err != nil {
+		return false, err
+	}
+
+	if info.Size() < prefixInfo.Size() {
+		return false, nil
+	}
+
+	file, err := os.Open(path)
+
+	if err != nil {
+		return false, err
+	}
+
+	defer file.Close()
+
+	prefix, err := os.Open(prefixPath)
+
+	if err != nil {
+		return false, err
+	}
+
+	defer prefix.Close()
+
+	head := bufio.NewReader(io.LimitReader(file, prefixInfo.Size()))
+	expected := bufio.NewReader(prefix)
+
+	for {
+		want, err := expected.ReadByte()
+
+		if errors.Is(err, io.EOF) {
+			return true, nil
+		}
+
+		if err != nil {
+			return false, err
+		}
+
+		got, err := head.ReadByte()
+
+		if err != nil || got != want {
+			return false, nil
+		}
+	}
+}
+
+func copyFile(source, target string, modTime time.Time, exclusive bool) error {
 	input, err := os.Open(source)
 
 	if err != nil {
@@ -317,7 +470,13 @@ func copyFile(source, target string, modTime time.Time) error {
 
 	defer input.Close()
 
-	output, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	flags := os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+
+	if exclusive {
+		flags = os.O_CREATE | os.O_WRONLY | os.O_EXCL
+	}
+
+	output, err := os.OpenFile(target, flags, 0o600)
 
 	if err != nil {
 		return err
