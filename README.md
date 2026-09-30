@@ -1,5 +1,8 @@
 # Starred for Claude Code
 
+[![ci](https://github.com/artengin/claude-starred/actions/workflows/ci.yml/badge.svg)](https://github.com/artengin/claude-starred/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/artengin/claude-starred)](https://github.com/artengin/claude-starred/releases/latest)
+
 Bookmarks for your Claude Code sessions.
 
 Star the sessions worth coming back to with `/star`, then find and reopen them from one small tree in your terminal. Starred sessions survive Claude Code's automatic cleanup.
