@@ -19,7 +19,7 @@ Star the sessions worth coming back to with `/star`, then find and reopen them f
 
 ## Features
 
-- `/star` inside any Claude Code session adds it to the list and asks for a name.
+- `/star` inside any Claude Code session adds it to the list and asks for a name; `/unstar` removes it.
 - One tree for all projects: project first, then its sessions. Sessions from every git worktree of a repository are shown together under that repository.
 - `Enter` reopens a session right in your current terminal, in its original directory.
 - Starred sessions are kept safe from Claude Code's cleanup.
@@ -34,7 +34,7 @@ Star the sessions worth coming back to with `/star`, then find and reopen them f
    curl -fsSL https://raw.githubusercontent.com/artengin/claude-starred/main/install.sh | sh
    ```
 
-   This installs `claude-starred` into `~/.local/bin` and the `/star` skill into Claude Code.
+   This installs `claude-starred` into `~/.local/bin` and the `/star` and `/unstar` skills into Claude Code.
 
 2. In a Claude Code session you want to keep, run:
 
@@ -61,7 +61,7 @@ claude-starred update
 claude-starred uninstall
 ```
 
-`update` replaces the binary and refreshes the `/star` skill. `uninstall` removes the `/star` skill, the starred list with its kept copies, and the binary. If Claude has already deleted some starred sessions, you are warned that they will be lost.
+`update` replaces the binary and refreshes the skills. `uninstall` removes the skills, the starred list with its kept copies, and the binary. Sessions that Claude has already deleted are returned to it first; you are warned about the ones that cannot be returned, because they will be lost.
 
 ## Keys
 

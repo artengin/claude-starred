@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -43,6 +44,7 @@ const (
 	browsing mode = iota
 	renaming
 	confirming
+	confirmingLast
 	confirmingLive
 	helping
 )
@@ -87,20 +89,21 @@ var russianLayout = strings.NewReplacer(
 )
 
 type Model struct {
-	store     *store.Store
-	projects  []project
-	level     level
-	root      string
-	cursor    [2]int
-	mode      mode
-	input     []rune
-	caret     int
-	showPaths bool
-	message   string
-	failure   string
-	width     int
-	height    int
-	Selected  *Session
+	store       *store.Store
+	projects    []project
+	level       level
+	root        string
+	cursor      [2]int
+	mode        mode
+	input       []rune
+	caret       int
+	showPaths   bool
+	message     string
+	failure     string
+	returnError error
+	width       int
+	height      int
+	Selected    *Session
 }
 
 func New(s *store.Store) *Model {
@@ -164,6 +167,8 @@ func (m *Model) handleKey(key tea.KeyMsg) tea.Cmd {
 		m.editInput(key, m.finishRename)
 	case confirming:
 		m.finishUnstar(russianLayout.Replace(key.String()) == "y")
+	case confirmingLast:
+		m.finishDiscard(russianLayout.Replace(key.String()) == "y")
 	case confirmingLive:
 		return m.finishOpen(russianLayout.Replace(key.String()) == "y")
 	case helping:
@@ -305,7 +310,33 @@ func (m *Model) finishUnstar(confirmed bool) {
 		return
 	}
 
-	if err := m.store.Unstar(session.ID); err != nil {
+	err := m.store.Unstar(session.ID)
+
+	var notReturned *store.NotReturnedError
+
+	if errors.As(err, &notReturned) {
+		m.mode, m.returnError = confirmingLast, notReturned.Cause
+		return
+	}
+
+	if err != nil {
+		m.message = err.Error()
+		return
+	}
+
+	m.reload()
+	m.message = i18n.T("unstarred", session.Name)
+}
+
+func (m *Model) finishDiscard(confirmed bool) {
+	m.mode = browsing
+	session := m.selectedSession()
+
+	if !confirmed || session == nil {
+		return
+	}
+
+	if err := m.store.Discard(session.ID); err != nil {
 		m.message = err.Error()
 		return
 	}
@@ -659,7 +690,7 @@ func (m *Model) footer() string {
 
 func (m *Model) footerText() string {
 	switch m.mode {
-	case confirming, confirmingLive:
+	case confirming, confirmingLast, confirmingLive:
 		if session := m.selectedSession(); session != nil {
 			return m.confirmation(*session)
 		}
@@ -709,8 +740,10 @@ func (m *Model) confirmation(session Session) string {
 	switch {
 	case m.mode == confirmingLive:
 		return i18n.T("confirm_live", session.Name)
+	case m.mode == confirmingLast:
+		return i18n.T("confirm_last", session.Name, m.returnError)
 	case m.store.OnlyCopy(session.ID):
-		return i18n.T("confirm_last", session.Name)
+		return i18n.T("confirm_return", session.Name)
 	}
 
 	return i18n.T("confirm_unstar", session.Name)

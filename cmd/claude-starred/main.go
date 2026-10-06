@@ -27,9 +27,10 @@ const usage = `claude-starred - starred Claude Code sessions
 Usage:
   claude-starred                      browse starred sessions
   claude-starred star <id> [--name N] star a session (used by the /star skill)
+  claude-starred unstar <id>          unstar a session (used by the /unstar skill)
   claude-starred info <id>            show the star state of a session
-  claude-starred install              install the /star skill into Claude Code
-  claude-starred uninstall            remove the skill, starred data and this binary
+  claude-starred install              install the /star and /unstar skills into Claude Code
+  claude-starred uninstall            remove the skills, starred data and this binary
   claude-starred update               update to the latest release
   claude-starred version              print the version
 `
@@ -58,7 +59,7 @@ func run(args []string) error {
 		return update()
 	case "uninstall":
 		return uninstall()
-	case "", "star", "info":
+	case "", "star", "unstar", "info":
 	default:
 		fmt.Print(usage)
 		return nil
@@ -73,6 +74,8 @@ func run(args []string) error {
 	switch command {
 	case "star":
 		return star(s, args[1:])
+	case "unstar":
+		return unstar(s, args[1:])
 	case "info":
 		return info(s, args[1:])
 	}
@@ -176,6 +179,32 @@ func star(s *store.Store, args []string) error {
 	return nil
 }
 
+func unstar(s *store.Store, args []string) error {
+	if len(args) != 1 {
+		return errors.New("usage: claude-starred unstar <id>")
+	}
+
+	record := s.Find(args[0])
+
+	if record == nil {
+		return errors.New(i18n.T("not_starred", args[0]))
+	}
+
+	if err := s.Unstar(record.ID); err != nil {
+		var notReturned *store.NotReturnedError
+
+		if errors.As(err, &notReturned) {
+			return errors.New(i18n.T("unstar_failed", err, record.Name))
+		}
+
+		return err
+	}
+
+	fmt.Println(i18n.T("unstarred", record.Name))
+
+	return nil
+}
+
 func info(s *store.Store, args []string) error {
 	if len(args) != 1 {
 		return errors.New("usage: claude-starred info <id>")
@@ -220,34 +249,42 @@ func install() error {
 		return err
 	}
 
-	if err := setup.InstallSkill(executable); err != nil {
-		return err
+	installed, skipped, err := setup.InstallSkills(executable)
+
+	for _, path := range skipped {
+		fmt.Printf("Skipped %s: it belongs to another skill.\n", path)
 	}
 
-	fmt.Printf("Installed the /star skill: %s\nRun `claude-starred` to browse starred sessions.\n", setup.SkillDir())
+	if len(installed) > 0 {
+		fmt.Printf("Installed /%s into %s\n", strings.Join(installed, ", /"), setup.SkillsDir())
+	}
 
-	return nil
+	return err
 }
 
 func uninstall() error {
-	question := "Remove the /star skill, all starred data and this binary? Claude sessions are not touched. [y/N] "
+	question := "Remove the claude-starred skills, all starred data and this binary? Claude sessions are not touched. [y/N] "
 	s, err := store.Open(store.DefaultDir())
 
 	if err != nil {
 		question = fmt.Sprintf("Cannot read the starred list (%v); kept transcripts in %s will be deleted.\n%s", err, store.DefaultDir(), question)
 	} else if onlyCopies := countOnlyCopies(s); onlyCopies > 0 {
-		question = fmt.Sprintf("%d starred sessions were already deleted by Claude and exist only here; they will be lost.\n%s", onlyCopies, question)
+		question = fmt.Sprintf("%d starred sessions were deleted by Claude; they will be returned to it first.\n%s", onlyCopies, question)
 	}
 
-	fmt.Print(question)
-	answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
-
-	if strings.ToLower(strings.TrimSpace(answer)) != "y" {
-		fmt.Println("Cancelled")
+	if !confirmed(question) {
 		return nil
 	}
 
-	if err := setup.RemoveSkill(); err != nil {
+	if s != nil {
+		_ = s.Sync()
+
+		if onlyCopies := countOnlyCopies(s); onlyCopies > 0 && !confirmed(fmt.Sprintf("%d sessions could not be returned to Claude and will be lost. Continue? [y/N] ", onlyCopies)) {
+			return nil
+		}
+	}
+
+	if err := setup.RemoveSkills(); err != nil {
 		return err
 	}
 
@@ -269,6 +306,18 @@ func uninstall() error {
 	fmt.Println("Done.")
 
 	return os.Remove(executable)
+}
+
+func confirmed(question string) bool {
+	fmt.Print(question)
+	answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+
+	if strings.ToLower(strings.TrimSpace(answer)) != "y" {
+		fmt.Println("Cancelled")
+		return false
+	}
+
+	return true
 }
 
 func countOnlyCopies(s *store.Store) int {
@@ -297,9 +346,13 @@ func update() error {
 	}
 
 	if updated && setup.SkillInstalled() {
-		if output, err := exec.Command(executable, "install").CombinedOutput(); err != nil {
-			return fmt.Errorf("binary updated to %s, but the /star skill was not refreshed (%w: %s); run `claude-starred install`", tag, err, output)
+		output, err := exec.Command(executable, "install").CombinedOutput()
+
+		if err != nil {
+			return fmt.Errorf("binary updated to %s, but the skills were not refreshed (%w: %s); run `claude-starred install`", tag, err, output)
 		}
+
+		fmt.Print(string(output))
 	}
 
 	fmt.Println("claude-starred", tag)

@@ -281,6 +281,42 @@ func TestUnstarRemovesRecordAndCopy(t *testing.T) {
 	}
 }
 
+func TestUnstarRestoresTheTranscriptDeletedByClaude(t *testing.T) {
+	s, transcript := starred(t)
+	must(t, os.Remove(transcript))
+
+	must(t, s.Unstar("abc"))
+
+	if data, err := os.ReadFile(transcript); err != nil || string(data) != `{"type":"user","cwd":"/work"}`+"\n" {
+		t.Fatalf("the last copy was lost instead of going back to Claude: %q, %v", data, err)
+	}
+
+	if exists(s.CopyPath("abc")) {
+		t.Fatal("copy left after unstar")
+	}
+}
+
+func TestUnstarKeepsTheLastCopyWhenItCannotGoBack(t *testing.T) {
+	s, transcript := starred(t)
+	must(t, os.Remove(transcript))
+	must(t, os.RemoveAll(filepath.Dir(transcript)))
+	must(t, os.WriteFile(filepath.Dir(transcript), nil, 0o600))
+
+	if err := s.Unstar("abc"); err == nil {
+		t.Fatal("expected an error when the transcript cannot be restored")
+	}
+
+	if s.Find("abc") == nil || !exists(s.CopyPath("abc")) {
+		t.Fatal("a failed unstar must leave the record and the copy in place")
+	}
+
+	must(t, s.Discard("abc"))
+
+	if s.Find("abc") != nil || exists(s.CopyPath("abc")) {
+		t.Fatal("discard must drop the record and the copy without restoring")
+	}
+}
+
 func TestLostWhenBothFilesAreGone(t *testing.T) {
 	s, transcript := starred(t)
 	must(t, os.Remove(transcript))

@@ -13,6 +13,18 @@ import (
 	"time"
 )
 
+type NotReturnedError struct {
+	Cause error
+}
+
+func (e *NotReturnedError) Error() string {
+	return "the transcript could not be returned to Claude: " + e.Cause.Error()
+}
+
+func (e *NotReturnedError) Unwrap() error {
+	return e.Cause
+}
+
 type Record struct {
 	ID         string    `json:"id"`
 	Name       string    `json:"name"`
@@ -103,12 +115,27 @@ func (s *Store) Rename(id, name string) error {
 }
 
 func (s *Store) Unstar(id string) error {
+	return s.unstar(id, true)
+}
+
+func (s *Store) Discard(id string) error {
+	return s.unstar(id, false)
+}
+
+func (s *Store) unstar(id string, returnTranscript bool) error {
 	err := s.modify(func(records []Record) ([]Record, error) {
 		var kept []Record
 
 		for _, record := range records {
 			if record.ID != id {
 				kept = append(kept, record)
+				continue
+			}
+
+			if returnTranscript {
+				if err := s.returnTranscript(record); err != nil {
+					return nil, err
+				}
 			}
 		}
 
@@ -159,11 +186,19 @@ func (s *Store) SyncRecord(record Record) error {
 		return keepCopy(record.Transcript, copyPath, s.HistoryPath(record.ID))
 	}
 
-	if !exists(copyPath) {
+	return s.returnTranscript(record)
+}
+
+func (s *Store) returnTranscript(record Record) error {
+	if exists(record.Transcript) || !exists(s.CopyPath(record.ID)) {
 		return nil
 	}
 
-	return restore(copyPath, s.HistoryPath(record.ID), record.Transcript)
+	if err := restore(s.CopyPath(record.ID), s.HistoryPath(record.ID), record.Transcript); err != nil {
+		return &NotReturnedError{Cause: err}
+	}
+
+	return nil
 }
 
 func (s *Store) Lost(id string) bool {

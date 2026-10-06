@@ -11,14 +11,14 @@ import (
 	"github.com/artengin/claude-starred/internal/claude"
 )
 
-const skillMarker = "claude-starred"
-
-const skillTemplate = `---
+const starTemplate = `---
 name: star
 description: Add the current session to starred sessions (claude-starred) and keep it safe from automatic cleanup.
 disable-model-invocation: true
 allowed-tools: Bash(%[1]s info:*), Bash(%[1]s star:*)
 ---
+
+` + skillMarker + `
 
 Current state of this session:
 
@@ -41,28 +41,88 @@ STARRED_NAME
 4. Reply with the command output only.
 `
 
-func SkillDir() string {
-	return filepath.Join(claude.Dir(), "skills", "star")
+const unstarTemplate = `---
+name: unstar
+description: Remove the current session from starred sessions (claude-starred).
+disable-model-invocation: true
+allowed-tools: Bash(%[1]s unstar:*)
+---
+
+` + skillMarker + `
+
+Run this command exactly:
+
+` + "```" + `
+%[1]s unstar ${CLAUDE_SESSION_ID}
+` + "```" + `
+
+Reply with the command output only.
+`
+
+const skillMarker = "<!-- installed by claude-starred; edits are overwritten on update -->"
+
+const legacyStarDescription = "description: Add the current session to starred sessions (claude-starred) and keep it safe from automatic cleanup."
+
+type skill struct {
+	name     string
+	template string
+	required bool
 }
 
-func InstallSkill(executable string) error {
-	path := filepath.Join(SkillDir(), "SKILL.md")
+type skillState int
 
-	if data, err := os.ReadFile(path); err == nil && !strings.Contains(string(data), skillMarker) {
-		return fmt.Errorf("%s already exists and belongs to another skill", path)
-	}
+const (
+	absentSkill skillState = iota
+	ownSkill
+	foreignSkill
+)
 
-	if err := os.MkdirAll(SkillDir(), 0o755); err != nil {
-		return err
-	}
+var skills = []skill{
+	{name: "star", template: starTemplate, required: true},
+	{name: "unstar", template: unstarTemplate},
+}
 
+func SkillsDir() string {
+	return filepath.Join(claude.Dir(), "skills")
+}
+
+func InstallSkills(executable string) (installed, skipped []string, err error) {
 	command, err := skillCommand(executable)
 
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
-	return os.WriteFile(path, []byte(fmt.Sprintf(skillTemplate, command)), 0o644)
+	states := make([]skillState, len(skills))
+
+	for i, s := range skills {
+		if states[i], err = s.state(); err != nil {
+			return nil, nil, err
+		}
+
+		if s.required && states[i] == foreignSkill {
+			return nil, nil, fmt.Errorf("%s already exists and belongs to another skill", s.file())
+		}
+	}
+
+	for i, s := range skills {
+		if states[i] == foreignSkill {
+			skipped = append(skipped, s.file())
+			continue
+		}
+
+		if err := os.MkdirAll(filepath.Dir(s.file()), 0o755); err != nil {
+			return installed, skipped, err
+		}
+
+		if err := os.WriteFile(s.file(), []byte(fmt.Sprintf(s.template, command)), 0o644); err != nil {
+			return installed, skipped, err
+		}
+
+		installed = append(installed, s.name)
+	}
+
+	return installed, skipped, nil
 }
 
 func skillCommand(executable string) (string, error) {
@@ -90,23 +150,57 @@ func sameFile(a, b string) bool {
 }
 
 func SkillInstalled() bool {
-	data, err := os.ReadFile(filepath.Join(SkillDir(), "SKILL.md"))
+	for _, s := range skills {
+		if state, err := s.state(); s.required && (err != nil || state != ownSkill) {
+			return false
+		}
+	}
 
-	return err == nil && strings.Contains(string(data), skillMarker)
+	return true
 }
 
-func RemoveSkill() error {
-	data, err := os.ReadFile(filepath.Join(SkillDir(), "SKILL.md"))
+func RemoveSkills() error {
+	for _, s := range skills {
+		state, err := s.state()
 
-	if errors.Is(err, os.ErrNotExist) || (err == nil && !strings.Contains(string(data), skillMarker)) {
-		return nil
+		if err != nil {
+			return err
+		}
+
+		if state != ownSkill {
+			continue
+		}
+
+		if err := os.RemoveAll(filepath.Dir(s.file())); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s skill) file() string {
+	return filepath.Join(SkillsDir(), s.name, "SKILL.md")
+}
+
+func (s skill) state() (skillState, error) {
+	data, err := os.ReadFile(s.file())
+
+	if errors.Is(err, os.ErrNotExist) {
+		return absentSkill, nil
 	}
 
 	if err != nil {
-		return err
+		return absentSkill, err
 	}
 
-	return os.RemoveAll(SkillDir())
+	content := strings.ReplaceAll(string(data), "\r\n", "\n")
+
+	if strings.Contains(content, skillMarker) || strings.Contains(content, legacyStarDescription+"\n") {
+		return ownSkill, nil
+	}
+
+	return foreignSkill, nil
 }
 
 func shellQuote(path string) string {
