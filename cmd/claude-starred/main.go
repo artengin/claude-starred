@@ -31,7 +31,7 @@ Usage:
   claude-starred install              install the /star skill into Claude Code
   claude-starred uninstall            remove the skill, starred data and this binary
   claude-starred update               update to the latest release
-  claude-starred version              print the version
+  claude-starred version, -v          print the version
 `
 
 func main() {
@@ -49,7 +49,7 @@ func run(args []string) error {
 	}
 
 	switch command {
-	case "version":
+	case "version", "-v", "--version":
 		fmt.Println(version)
 		return nil
 	case "install":
