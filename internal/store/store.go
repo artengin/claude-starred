@@ -13,6 +13,18 @@ import (
 	"time"
 )
 
+type NotReturnedError struct {
+	Cause error
+}
+
+func (e *NotReturnedError) Error() string {
+	return "the transcript could not be returned to Claude: " + e.Cause.Error()
+}
+
+func (e *NotReturnedError) Unwrap() error {
+	return e.Cause
+}
+
 type Record struct {
 	ID         string    `json:"id"`
 	Name       string    `json:"name"`
@@ -103,12 +115,27 @@ func (s *Store) Rename(id, name string) error {
 }
 
 func (s *Store) Unstar(id string) error {
+	return s.unstar(id, true)
+}
+
+func (s *Store) Discard(id string) error {
+	return s.unstar(id, false)
+}
+
+func (s *Store) unstar(id string, returnTranscript bool) error {
 	err := s.modify(func(records []Record) ([]Record, error) {
 		var kept []Record
 
 		for _, record := range records {
 			if record.ID != id {
 				kept = append(kept, record)
+				continue
+			}
+
+			if returnTranscript && !exists(record.Transcript) {
+				if err := s.returnTranscript(record); err != nil {
+					return nil, err
+				}
 			}
 		}
 
@@ -153,17 +180,33 @@ func (s *Store) Sync() error {
 }
 
 func (s *Store) SyncRecord(record Record) error {
-	copyPath := s.CopyPath(record.ID)
+	return s.locked(func() error {
+		if exists(record.Transcript) {
+			return keepCopy(record.Transcript, s.CopyPath(record.ID), s.HistoryPath(record.ID))
+		}
 
-	if exists(record.Transcript) {
-		return keepCopy(record.Transcript, copyPath, s.HistoryPath(record.ID))
+		return s.returnTranscript(record)
+	})
+}
+
+func (s *Store) ReturnDeleted() {
+	for _, record := range s.Records {
+		if s.OnlyCopy(record.ID) {
+			_ = s.locked(func() error { return s.returnTranscript(record) })
+		}
 	}
+}
 
-	if !exists(copyPath) {
+func (s *Store) returnTranscript(record Record) error {
+	if !exists(s.CopyPath(record.ID)) {
 		return nil
 	}
 
-	return restore(copyPath, s.HistoryPath(record.ID), record.Transcript)
+	if err := restore(s.CopyPath(record.ID), s.HistoryPath(record.ID), record.Transcript); err != nil {
+		return &NotReturnedError{Cause: err}
+	}
+
+	return nil
 }
 
 func (s *Store) Lost(id string) bool {
@@ -209,6 +252,28 @@ func (s *Store) file() string {
 }
 
 func (s *Store) modify(change func([]Record) ([]Record, error)) error {
+	return s.locked(func() error {
+		records, err := s.read()
+
+		if err != nil {
+			return err
+		}
+
+		if records, err = change(records); err != nil {
+			return err
+		}
+
+		if err := s.write(records); err != nil {
+			return err
+		}
+
+		s.Records = records
+
+		return nil
+	})
+}
+
+func (s *Store) locked(action func() error) error {
 	if err := os.MkdirAll(s.Dir, 0o700); err != nil {
 		return err
 	}
@@ -227,23 +292,7 @@ func (s *Store) modify(change func([]Record) ([]Record, error)) error {
 
 	defer func() { _ = unlockFile(lock) }()
 
-	records, err := s.read()
-
-	if err != nil {
-		return err
-	}
-
-	if records, err = change(records); err != nil {
-		return err
-	}
-
-	if err := s.write(records); err != nil {
-		return err
-	}
-
-	s.Records = records
-
-	return nil
+	return action()
 }
 
 func (s *Store) read() ([]Record, error) {
@@ -389,7 +438,13 @@ func restore(copyPath, history, transcript string) error {
 
 	now := time.Now()
 
-	return os.Chtimes(transcript, now, now)
+	if err := os.Chtimes(transcript, now, now); err != nil {
+		os.Remove(transcript)
+
+		return err
+	}
+
+	return nil
 }
 
 func archive(path, history string) error {
@@ -508,14 +563,24 @@ func copyFile(source, target string, modTime time.Time, exclusive bool) error {
 
 	if _, err := io.Copy(output, input); err != nil {
 		output.Close()
+		os.Remove(target)
+
 		return err
 	}
 
 	if err := output.Close(); err != nil {
+		os.Remove(target)
+
 		return err
 	}
 
-	return os.Chtimes(target, modTime, modTime)
+	if err := os.Chtimes(target, modTime, modTime); err != nil {
+		os.Remove(target)
+
+		return err
+	}
+
+	return nil
 }
 
 func exists(path string) bool {

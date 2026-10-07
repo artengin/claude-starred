@@ -7,50 +7,112 @@ import (
 	"testing"
 )
 
-func TestInstallAndRemoveSkill(t *testing.T) {
+func TestInstallAndRemoveSkills(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
 
-	if err := InstallSkill("/opt/bin/claude-starred"); err != nil {
-		t.Fatal(err)
+	if installed, skipped, err := InstallSkills("/opt/bin/claude-starred"); err != nil || len(installed) != 2 || len(skipped) != 0 {
+		t.Fatalf("expected both skills installed, got %v, %v, %v", installed, skipped, err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(SkillDir(), "SKILL.md"))
-
-	if err != nil {
-		t.Fatal(err)
+	expectations := map[string][]string{
+		"star":   {"name: star", "Bash('/opt/bin/claude-starred' info:*), Bash('/opt/bin/claude-starred' star:*)", "`'/opt/bin/claude-starred' info ${CLAUDE_SESSION_ID}`", "<<'STARRED_NAME'"},
+		"unstar": {"name: unstar", "allowed-tools: Bash('/opt/bin/claude-starred' unstar:*)", "'/opt/bin/claude-starred' unstar ${CLAUDE_SESSION_ID}"},
 	}
 
-	for _, expected := range []string{"name: star", "Bash('/opt/bin/claude-starred' info:*), Bash('/opt/bin/claude-starred' star:*)", "`'/opt/bin/claude-starred' info ${CLAUDE_SESSION_ID}`", "<<'STARRED_NAME'"} {
-		if !strings.Contains(string(data), expected) {
-			t.Errorf("skill does not contain %q", expected)
+	for _, s := range skills {
+		data, err := os.ReadFile(s.file())
+
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		for _, text := range append(expectations[s.name], skillMarker) {
+			if !strings.Contains(string(data), text) {
+				t.Errorf("%s skill does not contain %q", s.name, text)
+			}
 		}
 	}
 
-	if err := RemoveSkill(); err != nil {
+	if err := RemoveSkills(); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := os.Stat(SkillDir()); !os.IsNotExist(err) {
-		t.Fatal("skill directory left after removal")
+	for _, s := range skills {
+		if _, err := os.Stat(filepath.Dir(s.file())); !os.IsNotExist(err) {
+			t.Fatalf("%s skill directory left after removal", s.name)
+		}
 	}
 }
 
-func TestForeignSkillIsNotTouched(t *testing.T) {
+func TestForeignUnstarSkillIsSkipped(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
-	path := filepath.Join(SkillDir(), "SKILL.md")
-	must(t, os.MkdirAll(SkillDir(), 0o755))
-	must(t, os.WriteFile(path, []byte("someone else's star skill"), 0o644))
+	star, unstar := skills[0], skills[1]
+	must(t, os.MkdirAll(filepath.Dir(unstar.file()), 0o755))
+	must(t, os.WriteFile(unstar.file(), []byte("my wrapper around claude-starred unstar"), 0o644))
 
-	if err := InstallSkill("/opt/bin/claude-starred"); err == nil {
-		t.Fatal("expected an error for a foreign skill")
+	installed, skipped, err := InstallSkills("/opt/bin/claude-starred")
+
+	if err != nil || len(installed) != 1 || installed[0] != "star" || len(skipped) != 1 || !strings.HasPrefix(skipped[0], unstar.file()) {
+		t.Fatalf("expected only /star installed and /unstar skipped, got %v, %v, %v", installed, skipped, err)
 	}
 
-	if err := RemoveSkill(); err != nil {
-		t.Fatal(err)
+	must(t, RemoveSkills())
+
+	if _, err := os.Stat(filepath.Dir(star.file())); !os.IsNotExist(err) {
+		t.Fatal("our /star left after removal")
 	}
 
-	if data, _ := os.ReadFile(path); string(data) != "someone else's star skill" {
+	if data, _ := os.ReadFile(unstar.file()); string(data) != "my wrapper around claude-starred unstar" {
 		t.Fatal("foreign skill was changed")
+	}
+}
+
+func TestForeignStarSkillStopsTheInstall(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	star, unstar := skills[0], skills[1]
+	must(t, os.MkdirAll(filepath.Dir(star.file()), 0o755))
+	must(t, os.WriteFile(star.file(), []byte("someone else's star skill"), 0o644))
+
+	if _, _, err := InstallSkills("/opt/bin/claude-starred"); err == nil {
+		t.Fatal("expected an error for a foreign /star")
+	}
+
+	if _, err := os.Stat(unstar.file()); !os.IsNotExist(err) {
+		t.Fatal("/unstar must not be installed without /star")
+	}
+
+	if SkillInstalled() {
+		t.Fatal("a foreign skill is taken for ours")
+	}
+
+	must(t, RemoveSkills())
+
+	if data, _ := os.ReadFile(star.file()); string(data) != "someone else's star skill" {
+		t.Fatal("foreign skill was changed")
+	}
+}
+
+func TestLegacyAndEditedSkillsAreStillOurs(t *testing.T) {
+	cases := map[string]string{
+		"legacy":  "---\nname: star\n" + legacyStarDescription + "\nallowed-tools: Bash(starred info:*)\n---\n\nold body\n",
+		"crlf":    "---\r\nname: star\r\n" + legacyStarDescription + "\r\n---\r\n\r\n" + skillMarker + "\r\n",
+		"wrapper": "---\nname: star\ndescription: My own star that calls claude-starred under the hood.\n---\n\nRun claude-starred star\n",
+	}
+
+	for name, content := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+			star := skills[0]
+			must(t, os.MkdirAll(filepath.Dir(star.file()), 0o755))
+			must(t, os.WriteFile(star.file(), []byte(content), 0o644))
+
+			state, err := star.state()
+			must(t, err)
+
+			if own := state == ownSkill; own == (name == "wrapper") {
+				t.Fatalf("%s skill classified as own=%v", name, own)
+			}
+		})
 	}
 }
 

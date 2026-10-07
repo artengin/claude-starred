@@ -36,6 +36,7 @@ tar -xzf "$temporary/$archive" -C "$temporary" claude-starred
 mkdir -p "$bin_dir"
 mv "$temporary/claude-starred" "$bin_dir/claude-starred"
 "$bin_dir/claude-starred" install
+echo "Run claude-starred to browse starred sessions."
 
 case ":$PATH:" in
   *":$bin_dir:"*) ;;

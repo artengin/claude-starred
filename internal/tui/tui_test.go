@@ -135,6 +135,50 @@ func TestEscGoesBack(t *testing.T) {
 	}
 }
 
+func TestUnstarOffersToDropTheCopyOnlyWhenItCannotGoBack(t *testing.T) {
+	m, s := newModel(t)
+	transcript := s.Find("c").Transcript
+	must(t, os.Remove(transcript))
+	press(m, "enter", "d")
+
+	if !strings.Contains(m.View(), "goes back to Claude") {
+		t.Fatalf("expected the return notice, got:\n%s", m.View())
+	}
+
+	press(m, "y")
+
+	if s.Find("c") != nil || !exists(transcript) {
+		t.Fatal("unstar must return the transcript to Claude")
+	}
+
+	must(t, os.Remove(s.Find("d").Transcript))
+	must(t, os.RemoveAll(filepath.Dir(transcript)))
+	must(t, os.WriteFile(filepath.Dir(transcript), nil, 0o600))
+	press(m, "d", "y", "y")
+
+	if s.Find("d") == nil || !exists(s.CopyPath("d")) || m.mode != browsing {
+		t.Fatal("a repeated y must keep the last copy and close the question")
+	}
+
+	press(m, "d", "y")
+
+	if m.mode != confirmingLast || m.returnError == nil || !strings.Contains(m.View(), "Last copy of «Old notes»: press D") {
+		t.Fatalf("the question must survive the footer width, got:\n%s", m.View())
+	}
+
+	press(m, "n")
+
+	if s.Find("d") == nil || !exists(s.CopyPath("d")) {
+		t.Fatal("declining must keep the record and the copy")
+	}
+
+	press(m, "d", "y", "D")
+
+	if s.Find("d") != nil || exists(s.CopyPath("d")) {
+		t.Fatal("confirmed loss must discard the record and the copy")
+	}
+}
+
 func TestRenameAndUnstar(t *testing.T) {
 	m, s := newModel(t)
 	press(m, "j", "enter", "r", "ctrl+u", "N", "e", "w", "enter")
