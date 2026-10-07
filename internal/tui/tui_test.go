@@ -154,10 +154,16 @@ func TestUnstarOffersToDropTheCopyOnlyWhenItCannotGoBack(t *testing.T) {
 	must(t, os.Remove(s.Find("d").Transcript))
 	must(t, os.RemoveAll(filepath.Dir(transcript)))
 	must(t, os.WriteFile(filepath.Dir(transcript), nil, 0o600))
+	press(m, "d", "y", "y")
+
+	if s.Find("d") == nil || !exists(s.CopyPath("d")) || m.mode != browsing {
+		t.Fatal("a repeated y must keep the last copy and close the question")
+	}
+
 	press(m, "d", "y")
 
-	if s.Find("d") == nil || m.mode != confirmingLast || !strings.Contains(m.returnError.Error(), "not a directory") || !strings.Contains(m.View(), "cannot be returned") {
-		t.Fatalf("expected the last-copy warning with the reason, got mode %v, %v:\n%s", m.mode, m.returnError, m.View())
+	if m.mode != confirmingLast || m.returnError == nil || !strings.Contains(m.View(), "Last copy of «Old notes»: press D") {
+		t.Fatalf("the question must survive the footer width, got:\n%s", m.View())
 	}
 
 	press(m, "n")
@@ -166,7 +172,7 @@ func TestUnstarOffersToDropTheCopyOnlyWhenItCannotGoBack(t *testing.T) {
 		t.Fatal("declining must keep the record and the copy")
 	}
 
-	press(m, "d", "y", "y")
+	press(m, "d", "y", "D")
 
 	if s.Find("d") != nil || exists(s.CopyPath("d")) {
 		t.Fatal("confirmed loss must discard the record and the copy")

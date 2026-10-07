@@ -52,7 +52,7 @@ func TestForeignUnstarSkillIsSkipped(t *testing.T) {
 
 	installed, skipped, err := InstallSkills("/opt/bin/claude-starred")
 
-	if err != nil || len(installed) != 1 || installed[0] != "star" || len(skipped) != 1 || skipped[0] != unstar.file() {
+	if err != nil || len(installed) != 1 || installed[0] != "star" || len(skipped) != 1 || !strings.HasPrefix(skipped[0], unstar.file()) {
 		t.Fatalf("expected only /star installed and /unstar skipped, got %v, %v, %v", installed, skipped, err)
 	}
 

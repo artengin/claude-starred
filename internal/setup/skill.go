@@ -96,18 +96,26 @@ func InstallSkills(executable string) (installed, skipped []string, err error) {
 	states := make([]skillState, len(skills))
 
 	for i, s := range skills {
-		if states[i], err = s.state(); err != nil {
+		states[i], err = s.state()
+
+		if s.required && err != nil {
 			return nil, nil, err
 		}
 
 		if s.required && states[i] == foreignSkill {
 			return nil, nil, fmt.Errorf("%s already exists and belongs to another skill", s.file())
 		}
+
+		if err != nil {
+			skipped = append(skipped, fmt.Sprintf("%s: %v", s.file(), err))
+			states[i] = foreignSkill
+		} else if states[i] == foreignSkill {
+			skipped = append(skipped, s.file()+" belongs to another skill")
+		}
 	}
 
 	for i, s := range skills {
 		if states[i] == foreignSkill {
-			skipped = append(skipped, s.file())
 			continue
 		}
 
@@ -151,7 +159,11 @@ func sameFile(a, b string) bool {
 
 func SkillInstalled() bool {
 	for _, s := range skills {
-		if state, err := s.state(); s.required && (err != nil || state != ownSkill) {
+		if !s.required {
+			continue
+		}
+
+		if state, err := s.state(); err != nil || state != ownSkill {
 			return false
 		}
 	}

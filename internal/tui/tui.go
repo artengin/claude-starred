@@ -157,6 +157,10 @@ func (m *Model) handleKey(key tea.KeyMsg) tea.Cmd {
 
 		for _, r := range key.Runes {
 			commands = append(commands, m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}))
+
+			if m.mode == confirmingLast {
+				break
+			}
 		}
 
 		return tea.Batch(commands...)
@@ -168,7 +172,7 @@ func (m *Model) handleKey(key tea.KeyMsg) tea.Cmd {
 	case confirming:
 		m.finishUnstar(russianLayout.Replace(key.String()) == "y")
 	case confirmingLast:
-		m.finishDiscard(russianLayout.Replace(key.String()) == "y")
+		m.finishDiscard(key.String() == "D")
 	case confirmingLive:
 		return m.finishOpen(russianLayout.Replace(key.String()) == "y")
 	case helping:
@@ -329,7 +333,7 @@ func (m *Model) finishUnstar(confirmed bool) {
 }
 
 func (m *Model) finishDiscard(confirmed bool) {
-	m.mode = browsing
+	m.mode, m.returnError = browsing, nil
 	session := m.selectedSession()
 
 	if !confirmed || session == nil {

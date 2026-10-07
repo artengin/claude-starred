@@ -22,6 +22,8 @@ import (
 
 var version = "dev"
 
+var stdin = bufio.NewReader(os.Stdin)
+
 const usage = `claude-starred - starred Claude Code sessions
 
 Usage:
@@ -134,7 +136,7 @@ func star(s *store.Store, args []string) error {
 	id := args[0]
 
 	if *name == "-" {
-		line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+		line, _ := stdin.ReadString('\n')
 		*name = strings.TrimSpace(line)
 	}
 
@@ -194,7 +196,7 @@ func unstar(s *store.Store, args []string) error {
 		var notReturned *store.NotReturnedError
 
 		if errors.As(err, &notReturned) {
-			return errors.New(i18n.T("unstar_failed", err, record.Name))
+			return errors.New(i18n.T("unstar_failed", record.Name, notReturned.Cause))
 		}
 
 		return err
@@ -251,8 +253,8 @@ func install() error {
 
 	installed, skipped, err := setup.InstallSkills(executable)
 
-	for _, path := range skipped {
-		fmt.Printf("Skipped %s: it belongs to another skill.\n", path)
+	for _, reason := range skipped {
+		fmt.Println("Skipped", reason)
 	}
 
 	if len(installed) > 0 {
@@ -277,7 +279,7 @@ func uninstall() error {
 	}
 
 	if s != nil {
-		_ = s.Sync()
+		s.ReturnDeleted()
 
 		if onlyCopies := countOnlyCopies(s); onlyCopies > 0 && !confirmed(fmt.Sprintf("%d sessions could not be returned to Claude and will be lost. Continue? [y/N] ", onlyCopies)) {
 			return nil
@@ -310,7 +312,7 @@ func uninstall() error {
 
 func confirmed(question string) bool {
 	fmt.Print(question)
-	answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	answer, _ := stdin.ReadString('\n')
 
 	if strings.ToLower(strings.TrimSpace(answer)) != "y" {
 		fmt.Println("Cancelled")
